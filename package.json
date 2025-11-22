@@ -16,8 +16,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "clean": "rimraf dist",
-    "test": "node --test dist",
-    "test:coverage": "npm run build && c8 -r text -r lcov node --test dist"
+    "test": "npm run build && node --test \"dist/__tests__/*.js\"",
+    "test:coverage": "npm run build && c8 -r text -r lcov node --test \"dist/__tests__/*.js\""
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.0",

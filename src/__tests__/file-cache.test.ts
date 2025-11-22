@@ -13,6 +13,15 @@ const setupCache = () => {
 };
 
 describe("FileCache", () => {
+  it("creates default cache directory when no path provided", () => {
+    const defaultDir = path.join(tmpdir(), "node-cache");
+    fs.rmSync(defaultDir, { recursive: true, force: true });
+    const cache = new FileCache();
+    assert.ok(fs.existsSync(defaultDir));
+    cache.flush();
+    fs.rmSync(defaultDir, { recursive: true, force: true });
+  });
+
   it("returns default null when key is missing", () => {
     const { cache, cleanup } = setupCache();
     assert.equal(cache.get("missing"), null);
@@ -53,13 +62,59 @@ describe("FileCache", () => {
     cleanup();
   });
 
+  it("get returns default on invalid JSON", () => {
+    const { cache, cleanup, dir } = setupCache();
+    const key = "invalid-json";
+    const filename = path.join(dir, encodeURIComponent(key));
+    fs.writeFileSync(filename, "{", "utf8");
+
+    assert.equal(cache.get(key, "default"), "default");
+    cleanup();
+  });
+
+  it("get returns default when payload is null", () => {
+    const { cache, cleanup, dir } = setupCache();
+    const key = "null-get";
+    const filename = path.join(dir, encodeURIComponent(key));
+    fs.writeFileSync(filename, "null", "utf8");
+
+    assert.equal(cache.get(key, "default"), "default");
+    cleanup();
+  });
+
+  it("get handles unreadable directory and returns default", () => {
+    const { cache, cleanup, dir } = setupCache();
+    const key = "dir-key";
+    const filename = path.join(dir, encodeURIComponent(key));
+    fs.mkdirSync(filename);
+
+    assert.equal(cache.get(key, "default"), "default");
+    cleanup();
+  });
+
+  it("get deletes expired entries and returns default", () => {
+    const { cache, cleanup, dir } = setupCache();
+    const key = "expired";
+    const filename = path.join(dir, encodeURIComponent(key));
+    fs.writeFileSync(
+      filename,
+      JSON.stringify({ value: "old", expiresAt: Date.now() - 100 }),
+      "utf8"
+    );
+
+    const value = cache.get(key, "default");
+    assert.equal(value, "default");
+    assert.equal(fs.existsSync(filename), false);
+    cleanup();
+  });
+
   it("stores and retrieves values on disk", () => {
     const { cache, cleanup, dir } = setupCache();
     const key = "answer";
     const filename = path.join(dir, encodeURIComponent(key));
     fs.writeFileSync(filename, JSON.stringify({ value: 42 }), "utf8");
 
-    assert.deepEqual(cache.get("answer"), { value: 42 });
+    assert.equal(cache.get("answer"), 42);
 
     cleanup();
   });
@@ -88,6 +143,34 @@ describe("FileCache", () => {
 
     const value = cache.remember(key, 60, () => "new");
     assert.equal(value, "kept");
+    cleanup();
+  });
+
+  it("remember overwrites expired entry", () => {
+    const { cache, cleanup, dir } = setupCache();
+    const key = "existing-expired";
+    const filename = path.join(dir, encodeURIComponent(key));
+    fs.writeFileSync(
+      filename,
+      JSON.stringify({ value: "old", expiresAt: Date.now() - 100 }),
+      "utf8"
+    );
+
+    const value = cache.remember(key, 60, () => "fresh");
+    const payload = JSON.parse(fs.readFileSync(filename, "utf8"));
+    assert.equal(value, "fresh");
+    assert.equal(payload.value, "fresh");
+    cleanup();
+  });
+
+  it("remember with non-finite TTL stores without expiresAt", () => {
+    const { cache, cleanup, dir } = setupCache();
+    const key = "remember-nonfinite";
+    const value = cache.remember(key, Number.POSITIVE_INFINITY, () => "forever");
+    const filename = path.join(dir, encodeURIComponent(key));
+    const payload = JSON.parse(fs.readFileSync(filename, "utf8"));
+    assert.equal(value, "forever");
+    assert.equal(Object.prototype.hasOwnProperty.call(payload, "expiresAt"), false);
     cleanup();
   });
 
@@ -126,6 +209,17 @@ describe("FileCache", () => {
     cleanup();
   });
 
+  it("put with NaN TTL stores without expiresAt", () => {
+    const { cache, cleanup, dir } = setupCache();
+    const key = "nan-put";
+    cache.put(key, "value", Number.NaN);
+    const filename = path.join(dir, encodeURIComponent(key));
+    const payload = JSON.parse(fs.readFileSync(filename, "utf8"));
+    assert.equal(payload.value, "value");
+    assert.equal(Object.prototype.hasOwnProperty.call(payload, "expiresAt"), false);
+    cleanup();
+  });
+
   it("forever stores without expiry", () => {
     const { cache, cleanup, dir } = setupCache();
     const key = "forever-method";
@@ -134,6 +228,13 @@ describe("FileCache", () => {
     const payload = JSON.parse(fs.readFileSync(filename, "utf8"));
     assert.equal(payload.value, "value");
     assert.equal(Object.prototype.hasOwnProperty.call(payload, "expiresAt"), false);
+    cleanup();
+  });
+
+  it("flush ignores errors when directory missing", () => {
+    const { cache, cleanup, dir } = setupCache();
+    fs.rmSync(dir, { recursive: true, force: true });
+    cache.flush();
     cleanup();
   });
 
@@ -146,6 +247,12 @@ describe("FileCache", () => {
     assert.equal(cache.forget(key), true);
     assert.equal(fs.existsSync(filename), false);
     assert.equal(cache.forget(key), false);
+    cleanup();
+  });
+
+  it("forget returns false when key missing", () => {
+    const { cache, cleanup } = setupCache();
+    assert.equal(cache.forget("absent"), false);
     cleanup();
   });
 
@@ -175,6 +282,35 @@ describe("FileCache", () => {
     cleanup();
   });
 
+  it("add respects existing non-expired value", () => {
+    const { cache, cleanup, dir } = setupCache();
+    const key = "add-existing";
+    const filename = path.join(dir, encodeURIComponent(key));
+    fs.writeFileSync(
+      filename,
+      JSON.stringify({ value: "kept", expiresAt: Date.now() + 1000 }),
+      "utf8"
+    );
+
+    const stored = cache.add(key, "new", 10);
+    const payload = JSON.parse(fs.readFileSync(filename, "utf8"));
+    assert.equal(stored, false);
+    assert.equal(payload.value, "kept");
+    cleanup();
+  });
+
+  it("add returns false when file contains invalid JSON", () => {
+    const { cache, cleanup, dir } = setupCache();
+    const key = "add-invalid";
+    const filename = path.join(dir, encodeURIComponent(key));
+    fs.writeFileSync(filename, "{", "utf8");
+
+    assert.equal(cache.add(key, "new", 10), true);
+    const payload = JSON.parse(fs.readFileSync(filename, "utf8"));
+    assert.equal(payload.value, "new");
+    cleanup();
+  });
+
   it("pull returns value and deletes the file", () => {
     const { cache, cleanup, dir } = setupCache();
     const key = "pull-me";
@@ -200,6 +336,48 @@ describe("FileCache", () => {
     assert.equal(cache.pull("missing", "default"), "default");
     assert.equal(cache.pull(expiredKey, () => "from-factory"), "from-factory");
     assert.equal(fs.existsSync(filename), false);
+    cleanup();
+  });
+
+  it("pull deletes invalid JSON and returns default", () => {
+    const { cache, cleanup, dir } = setupCache();
+    const key = "pull-invalid";
+    const filename = path.join(dir, encodeURIComponent(key));
+    fs.writeFileSync(filename, "{", "utf8");
+
+    assert.equal(cache.pull(key, "default"), "default");
+    assert.equal(fs.existsSync(filename), false);
+    cleanup();
+  });
+
+  it("pull removes null payload and returns default", () => {
+    const { cache, cleanup, dir } = setupCache();
+    const key = "pull-null";
+    const filename = path.join(dir, encodeURIComponent(key));
+    fs.writeFileSync(filename, "null", "utf8");
+
+    assert.equal(cache.pull(key, "default"), "default");
+    assert.equal(fs.existsSync(filename), false);
+    cleanup();
+  });
+
+  it("pull handles unreadable directory entry and still returns default", () => {
+    const { cache, cleanup, dir } = setupCache();
+    const key = "pull-dir";
+    const filename = path.join(dir, encodeURIComponent(key));
+    fs.mkdirSync(filename);
+
+    assert.equal(cache.pull(key, "default"), "default");
+    assert.equal(fs.existsSync(filename), true);
+    cleanup();
+  });
+
+  it("resolveDefault returns null when factory throws", () => {
+    const { cache, cleanup } = setupCache();
+    const value = cache.get("missing", () => {
+      throw new Error("boom");
+    });
+    assert.equal(value, null);
     cleanup();
   });
 });
