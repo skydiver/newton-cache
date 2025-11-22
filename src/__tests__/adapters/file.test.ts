@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
-import { FileCache } from "../index.js";
+import { FileCache } from "../../index.js";
 
 const setupCache = () => {
   const dir = fs.mkdtempSync(path.join(tmpdir(), "node-cache-test-"));
