@@ -1,7 +1,27 @@
 {
-  "name": "node-cache",
+  "name": "@skydiver/node-cache",
   "version": "0.1.0",
-  "description": "Small, dependency-free file-based cache that stores plain text entries under a tmp directory.",
+  "description": "Lightweight, dependency-free cache library with pluggable adapters. File-based storage with TTL support.",
+  "keywords": [
+    "cache",
+    "file-cache",
+    "filesystem",
+    "storage",
+    "ttl",
+    "key-value",
+    "adapter",
+    "file-based",
+    "temporary",
+    "zero-dependencies"
+  ],
+  "homepage": "https://github.com/skydiver/node-cache#readme",
+  "bugs": {
+    "url": "https://github.com/skydiver/node-cache/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/skydiver/node-cache.git"
+  },
   "license": "MIT",
   "author": {
     "name": "Martín M.",
@@ -16,6 +36,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "clean": "rimraf dist",
+    "prepublishOnly": "npm run clean && npm run build && npm test",
     "test": "npm run build && node --test \"dist/__tests__/*.js\"",
     "test:coverage": "npm run build && c8 -r text -r lcov node --test \"dist/__tests__/*.js\""
   },
