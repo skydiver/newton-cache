@@ -126,6 +126,55 @@ describe("FileCache", () => {
     cleanup();
   });
 
+  it("forever stores without expiry", () => {
+    const { cache, cleanup, dir } = setupCache();
+    const key = "forever-method";
+    cache.forever(key, "value");
+    const filename = path.join(dir, encodeURIComponent(key));
+    const payload = JSON.parse(fs.readFileSync(filename, "utf8"));
+    assert.equal(payload.value, "value");
+    assert.equal(Object.prototype.hasOwnProperty.call(payload, "expiresAt"), false);
+    cleanup();
+  });
+
+  it("forget removes an item and returns true when it existed", () => {
+    const { cache, cleanup, dir } = setupCache();
+    const key = "forget-me";
+    const filename = path.join(dir, encodeURIComponent(key));
+    fs.writeFileSync(filename, JSON.stringify({ value: 1 }), "utf8");
+
+    assert.equal(cache.forget(key), true);
+    assert.equal(fs.existsSync(filename), false);
+    assert.equal(cache.forget(key), false);
+    cleanup();
+  });
+
+  it("flush clears all entries", () => {
+    const { cache, cleanup, dir } = setupCache();
+    fs.writeFileSync(path.join(dir, "a"), JSON.stringify({ value: 1 }), "utf8");
+    fs.writeFileSync(path.join(dir, "b"), JSON.stringify({ value: 2 }), "utf8");
+
+    cache.flush();
+
+    assert.deepEqual(fs.readdirSync(dir), []);
+    cleanup();
+  });
+
+  it("add stores only when missing", () => {
+    const { cache, cleanup, dir } = setupCache();
+    const key = "add-key";
+    const first = cache.add(key, "one", 10);
+    const second = cache.add(key, "two", 10);
+
+    assert.equal(first, true);
+    assert.equal(second, false);
+
+    const filename = path.join(dir, encodeURIComponent(key));
+    const payload = JSON.parse(fs.readFileSync(filename, "utf8"));
+    assert.equal(payload.value, "one");
+    cleanup();
+  });
+
   it("pull returns value and deletes the file", () => {
     const { cache, cleanup, dir } = setupCache();
     const key = "pull-me";

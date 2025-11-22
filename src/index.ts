@@ -88,6 +88,46 @@ export class FileCache<V = unknown> {
   }
 
   /*****************************************************************************
+   * Store a value permanently (no expiry).
+   ****************************************************************************/
+  forever(key: string, value: V): void {
+    this.put(key, value);
+  }
+
+  /*****************************************************************************
+   * Remove an item from the cache; returns true if removed.
+   ****************************************************************************/
+  forget(key: string): boolean {
+    const filename = this.pathForKey(key);
+    if (!fs.existsSync(filename)) return false;
+    fs.unlinkSync(filename);
+    return true;
+  }
+
+  /*****************************************************************************
+   * Clear all cached entries.
+   ****************************************************************************/
+  flush(): void {
+    try {
+      const files = fs.readdirSync(this.cacheDir);
+      for (const file of files) {
+        fs.unlinkSync(path.join(this.cacheDir, file));
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  /*****************************************************************************
+   * Add value only if missing; returns true if stored.
+   ****************************************************************************/
+  add(key: string, value: V, seconds?: number): boolean {
+    if (this.has(key)) return false;
+    this.put(key, value, seconds);
+    return true;
+  }
+
+  /*****************************************************************************
    * Retrieve value or store the computed default when missing/expired.
    ****************************************************************************/
   remember(key: string, seconds: number, factory: () => V): V {
