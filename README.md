@@ -53,7 +53,17 @@ if (cache.has('answer')) {
 }
 ```
 
-### Remember (get or store)
+### Storing items
+
+```ts
+// Store with a 10-second TTL:
+cache.put('key', 'value', 10);
+
+// Store indefinitely (no TTL):
+cache.put('key', 'value');
+```
+
+### Get or store information on the cache
 
 ```ts
 // Retrieve or compute and store for 60 seconds (TTL is in seconds):
@@ -74,6 +84,16 @@ const staticDefault = cache.pull('missing', 'default');
 
 // Provide a default (or factory) when missing:
 const fallback = cache.pull('missing', () => expensiveLookup());
+```
+
+### Storing items
+
+```ts
+// Store with a 10-second TTL:
+cache.put('key', 'value', 10);
+
+// Store indefinitely (no TTL):
+cache.put('key', 'value');
 ```
 
 If the entry is missing or expired, the factory runs and the result is written to disk. Otherwise, the cached value is returned. `pull` removes the file after reading.

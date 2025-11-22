@@ -104,6 +104,28 @@ describe("FileCache", () => {
     cleanup();
   });
 
+  it("put stores with TTL", () => {
+    const { cache, cleanup, dir } = setupCache();
+    const key = "ttl";
+    cache.put(key, "value", 1);
+    const filename = path.join(dir, encodeURIComponent(key));
+    const payload = JSON.parse(fs.readFileSync(filename, "utf8"));
+    assert.equal(payload.value, "value");
+    assert.ok(typeof payload.expiresAt === "number");
+    cleanup();
+  });
+
+  it("put stores forever when TTL omitted", () => {
+    const { cache, cleanup, dir } = setupCache();
+    const key = "forever-put";
+    cache.put(key, "value");
+    const filename = path.join(dir, encodeURIComponent(key));
+    const payload = JSON.parse(fs.readFileSync(filename, "utf8"));
+    assert.equal(payload.value, "value");
+    assert.equal(Object.prototype.hasOwnProperty.call(payload, "expiresAt"), false);
+    cleanup();
+  });
+
   it("pull returns value and deletes the file", () => {
     const { cache, cleanup, dir } = setupCache();
     const key = "pull-me";

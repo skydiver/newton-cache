@@ -77,6 +77,17 @@ export class FileCache<V = unknown> {
   }
 
   /*****************************************************************************
+   * Store a value with optional TTL in seconds (forever when omitted).
+   ****************************************************************************/
+  put(key: string, value: V, seconds?: number): void {
+    const expiresAt =
+      seconds == null || !Number.isFinite(seconds) ? undefined : Date.now() + seconds * 1000;
+    const payload = JSON.stringify({ value, expiresAt });
+    const filename = this.pathForKey(key);
+    fs.writeFileSync(filename, payload, "utf8");
+  }
+
+  /*****************************************************************************
    * Retrieve value or store the computed default when missing/expired.
    ****************************************************************************/
   remember(key: string, seconds: number, factory: () => V): V {
