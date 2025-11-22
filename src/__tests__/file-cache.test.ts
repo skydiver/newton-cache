@@ -22,9 +22,9 @@ describe("FileCache", () => {
     fs.rmSync(defaultDir, { recursive: true, force: true });
   });
 
-  it("returns default null when key is missing", () => {
+  it("returns default undefined when key is missing", () => {
     const { cache, cleanup } = setupCache();
-    assert.equal(cache.get("missing"), null);
+    assert.equal(cache.get("missing"), undefined);
     cleanup();
   });
 
@@ -51,7 +51,7 @@ describe("FileCache", () => {
     cleanup();
   });
 
-  it("has returns false when file missing or value is null", () => {
+  it("has returns false when file missing or value is null/undefined", () => {
     const { cache, cleanup, dir } = setupCache();
     const key = "nullish";
     const filename = path.join(dir, encodeURIComponent(key));
@@ -372,12 +372,12 @@ describe("FileCache", () => {
     cleanup();
   });
 
-  it("resolveDefault returns null when factory throws", () => {
+  it("resolveDefault returns undefined when factory throws", () => {
     const { cache, cleanup } = setupCache();
     const value = cache.get("missing", () => {
       throw new Error("boom");
     });
-    assert.equal(value, null);
+    assert.equal(value, undefined);
     cleanup();
   });
 });

@@ -1,11 +1,11 @@
-# node-cache
+# @skydiver/node-cache
 
-Small, dependency-free file-based cache that stores entries as plain text files under a tmp directory. Ships as an ES module with TypeScript typings.
+Lightweight, dependency-free cache library with pluggable adapters. File-based storage with TTL support. Ships as an ES module with TypeScript typings.
 
 ## Install
 
 ```bash
-npm install node-cache
+npm install @skydiver/node-cache
 ```
 
 ## Usage
@@ -13,7 +13,7 @@ npm install node-cache
 ### Initializing
 
 ```ts
-import { FileCache } from 'node-cache';
+import { FileCache } from '@skydiver/node-cache';
 
 // Stores files in the OS tmp directory by default.
 const cache = new FileCache<string>();
@@ -26,7 +26,7 @@ const cache = new FileCache<string>();
 
 ```ts
 // If a file named "answer" exists in the cache directory, read it:
-const value = cache.get('answer'); // parsed value, or null if missing
+const value = cache.get('answer'); // parsed value, or undefined if missing
 
 // Provide a default if the file doesn't exist or is unreadable:
 const fallback = cache.get('missing-key', 'default');
@@ -47,7 +47,7 @@ const twoLine = cache.get('computed', () => {
 ### Checking existence
 
 ```ts
-// Returns true when the file exists and contains a non-null value.
+// Returns true when the file exists and contains a defined value.
 if (cache.has('answer')) {
   // ...
 }
@@ -92,7 +92,7 @@ const users = cache.remember('users', 60, () => fetchUsers());
 // Store forever when missing:
 const usersAlways = cache.rememberForever('users', () => fetchUsers());
 
-// Retrieve and remove the cached value. Returns null when missing.
+// Retrieve and remove the cached value. Returns undefined when missing.
 const pulled = cache.pull('answer');
 
 // Provide a static default:
@@ -109,8 +109,8 @@ If the entry is missing or expired, the factory runs and the result is written t
 - Files are stored under a cache directory (`<os tmp>/node-cache` by default).
 - Keys are URL-encoded to form the filename (e.g., key `answer` -> `/tmp/node-cache/answer`).
 - Each file stores a JSON payload: `{ "value": <your data>, "expiresAt": <timestamp|undefined> }`.
-- `get` reads and JSON-parses the file for the given key, returning `null` or a caller-provided default when missing, invalid, or expired (expired files are deleted).
-- `has` returns true only when the file exists, parses, is not expired, and the stored `value` is not `null`.
+- `get` reads and JSON-parses the file for the given key, returning `undefined` or a caller-provided default when missing, invalid, or expired (expired files are deleted).
+- `has` returns true only when the file exists, parses, is not expired, and the stored `value` is defined.
 - `remember` writes the payload with an `expiresAt` timestamp when given a TTL (seconds). `rememberForever` omits `expiresAt`. If you pass complex objects, they're serialized with `JSON.stringify`; the timestamp sits alongside your data.
 
 ## Scripts
@@ -119,8 +119,6 @@ If the entry is missing or expired, the factory runs and the result is written t
 - `npm test` — build then run Node's built-in test runner against compiled output.
 - `npm run clean` — remove build artifacts.
 
-## Publishing notes
+## License
 
-- Update `package.json` with the final package name and metadata.
-- Run `npm install` to fetch dev dependencies, then `npm run build` to produce `dist/`.
-- Tests live under `src/__tests__` and are omitted from the published package via `.npmignore`.
+MIT

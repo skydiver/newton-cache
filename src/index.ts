@@ -20,9 +20,9 @@ export class FileCache<V = unknown> {
   }
 
   /*****************************************************************************
-   * Retrieve value or return provided default/null if missing or unreadable.
+   * Retrieve value or return provided default/undefined if missing or unreadable.
    ****************************************************************************/
-  get(key: string, defaultValue: V | null | (() => V) = null): V | null {
+  get(key: string, defaultValue?: V | (() => V)): V | undefined {
     const filename = this.pathForKey(key);
     if (!fs.existsSync(filename)) return this.resolveDefault(defaultValue);
 
@@ -36,16 +36,16 @@ export class FileCache<V = unknown> {
         return this.resolveDefault(defaultValue);
       }
 
-      return parsed.value;
+      return parsed.value ?? undefined;
     } catch {
       return this.resolveDefault(defaultValue);
     }
   }
 
   /*****************************************************************************
-   * Retrieve and delete value; returns default/null if missing or unreadable.
+   * Retrieve and delete value; returns default/undefined if missing or unreadable.
    ****************************************************************************/
-  pull(key: string, defaultValue: V | null | (() => V) = null): V | null {
+  pull(key: string, defaultValue?: V | (() => V)): V | undefined {
     const filename = this.pathForKey(key);
     if (!fs.existsSync(filename)) return this.resolveDefault(defaultValue);
 
@@ -63,7 +63,7 @@ export class FileCache<V = unknown> {
       }
 
       fs.unlinkSync(filename);
-      return parsed.value;
+      return parsed.value ?? undefined;
     } catch {
       if (fs.existsSync(filename)) {
         try {
@@ -131,16 +131,15 @@ export class FileCache<V = unknown> {
    * Retrieve value or store the computed default when missing/expired.
    ****************************************************************************/
   remember(key: string, seconds: number, factory: () => V): V {
-    const filename = this.pathForKey(key);
-
     if (this.has(key)) {
       const existing = this.get(key);
-      if (existing !== null) return existing;
+      if (existing !== undefined) return existing;
     }
 
     const value = factory();
     const expiresAt = Number.isFinite(seconds) ? Date.now() + seconds * 1000 : undefined;
     const payload = JSON.stringify({ value, expiresAt });
+    const filename = this.pathForKey(key);
     fs.writeFileSync(filename, payload, "utf8");
     return value;
   }
@@ -161,7 +160,7 @@ export class FileCache<V = unknown> {
   }
 
   /*****************************************************************************
-   * Determine if a value exists and is not null.
+   * Determine if a value exists and is not undefined.
    ****************************************************************************/
   has(key: string): boolean {
     const filename = this.pathForKey(key);
@@ -177,7 +176,7 @@ export class FileCache<V = unknown> {
         return false;
       }
 
-      return parsed.value !== null;
+      return parsed.value !== undefined;
     } catch {
       return false;
     }
@@ -186,12 +185,12 @@ export class FileCache<V = unknown> {
   /*****************************************************************************
    * Resolve default value; invoke factory when provided.
    ****************************************************************************/
-  private resolveDefault(defaultValue: V | null | (() => V)): V | null {
+  private resolveDefault(defaultValue?: V | (() => V)): V | undefined {
     if (typeof defaultValue === "function") {
       try {
         return (defaultValue as () => V)();
       } catch {
-        return null;
+        return undefined;
       }
     }
     return defaultValue;
