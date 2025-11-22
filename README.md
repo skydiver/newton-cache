@@ -161,7 +161,155 @@ cache.increment('balance', 50);      // 50
 cache.decrement('balance', 10);      // 40
 ```
 
-### How it works
+## Real-world Examples
+
+### Rate Limiting
+
+```ts
+const cache = new FileCache<number>();
+
+function checkRateLimit(userId: string): boolean {
+  const key = `rate-limit:${userId}`;
+  const requests = cache.get(key, 0);
+
+  if (requests >= 100) {
+    return false; // Rate limit exceeded
+  }
+
+  cache.increment(key);
+  cache.touch(key, 3600); // 1 hour window
+  return true;
+}
+```
+
+### API Response Caching
+
+```ts
+const cache = new FileCache<APIResponse>();
+
+async function fetchUserProfile(userId: string) {
+  return cache.remember(`user:${userId}`, 300, async () => {
+    const response = await fetch(`/api/users/${userId}`);
+    return response.json();
+  });
+}
+```
+
+### Session Storage
+
+```ts
+const sessions = new FileCache<SessionData>();
+
+function createSession(userId: string, data: SessionData) {
+  const sessionId = generateId();
+  sessions.put(sessionId, data, 86400); // 24 hours
+  return sessionId;
+}
+
+function extendSession(sessionId: string) {
+  sessions.touch(sessionId, 86400); // Extend by 24 hours
+}
+```
+
+### Feature Flags
+
+```ts
+const flags = new FileCache<boolean>();
+
+function isFeatureEnabled(feature: string): boolean {
+  return flags.remember(feature, 60, () => {
+    // Fetch from remote config service
+    return fetchFeatureFlag(feature);
+  });
+}
+```
+
+### Job Queue Deduplication
+
+```ts
+const jobs = new FileCache<string>();
+
+function enqueueJob(jobId: string, payload: any) {
+  const added = jobs.add(`job:${jobId}`, payload, 3600);
+  if (!added) {
+    console.log('Job already queued');
+    return false;
+  }
+  return true;
+}
+```
+
+## Performance Characteristics
+
+### Read Performance
+- **Cache hit**: ~0.5-2ms (includes file I/O, JSON parsing, TTL check)
+- **Cache miss**: ~0.1-0.5ms (file existence check only)
+- Long keys (>200 chars) have no performance penalty (hashed)
+
+### Write Performance
+- **Single write**: ~1-3ms (JSON serialization + file write)
+- **Atomic counters**: ~2-4ms (read + increment + write)
+- Batch operations can be simulated with `Promise.all()`
+
+### Scalability
+- **Sweet spot**: 1-10,000 entries
+- **Memory footprint**: Minimal (only metadata in memory, values on disk)
+- **Disk usage**: ~100-500 bytes per entry (depends on value size)
+
+### Trade-offs
+- **Slower than in-memory** caches (Redis, node-cache) but survives restarts
+- **Faster than databases** for simple key-value operations
+- **Thread-safe reads** but not atomic across processes (see limitations)
+- **`has()` reads full file** to check expiration (accurate but slower)
+
+## Limitations
+
+### Thread Safety
+⚠️ **Not thread-safe across multiple processes**
+- Safe for single-process applications
+- Not suitable for multi-process/cluster mode without external locking
+- Race conditions possible with concurrent writes to the same key
+
+```ts
+// ❌ Unsafe in cluster mode
+cluster.fork();
+cache.increment('counter'); // Race condition!
+
+// ✅ Safe in single process
+cache.increment('counter');
+```
+
+### Filesystem Dependencies
+- **Requires write access** to cache directory
+- **Not suitable for serverless** with read-only filesystems (use `/tmp` with caution)
+- **Disk I/O** adds latency compared to in-memory caches
+- **No ACID guarantees** (writes are not transactional)
+
+### Platform-Specific
+- **File path limits**: Keys >200 chars are hashed (irreversible)
+- **Case sensitivity**: Depends on filesystem (HFS+ vs ext4)
+- **Permissions**: Ensure cache directory is writable
+
+### Error Handling
+- **Silent failures** by design (returns defaults instead of throwing)
+- **No error callbacks** or logging hooks
+- Corrupted cache files are silently removed during operations
+
+### Not Suitable For
+- ❌ High-frequency writes (>10K ops/sec)
+- ❌ Large values (>1MB per entry)
+- ❌ Distributed systems without coordination
+- ❌ Critical data requiring persistence guarantees
+
+### Best Suited For
+- ✅ API response caching
+- ✅ Session storage
+- ✅ Rate limiting
+- ✅ Feature flags
+- ✅ Temporary computations
+- ✅ Single-server applications
+
+## How it works
 
 - Files are stored under a cache directory (`<os tmp>/node-cache` by default).
 - Keys are URL-encoded to form the filename (e.g., key `answer` -> `/tmp/node-cache/answer`).
@@ -171,7 +319,7 @@ cache.decrement('balance', 10);      // 40
 - `has` returns true only when the file exists, parses, is not expired, and the stored `value` is defined.
 - `remember` writes the payload with an `expiresAt` timestamp when given a TTL (seconds). `rememberForever` omits `expiresAt`.
 - `prune()` removes only expired entries, while `flush()` removes everything.
-- Counters (`increment`/`decrement`) are atomic and preserve existing TTL.
+- Counters (`increment`/`decrement`) are atomic within a single process and preserve existing TTL.
 
 ## Scripts
 
