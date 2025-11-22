@@ -1,81 +1,46 @@
-type CacheEntry<V> = {
-  value: V;
-  expiresAt?: number;
+import fs from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+
+export type FileCacheOptions = {
+  cachePath?: string;
 };
 
-export type CacheOptions = {
-  ttl?: number;
-};
+const DEFAULT_CACHE_DIR = path.join(tmpdir(), "node-cache");
 
-export class MemoryCache<K, V> {
-  private readonly defaultTtl?: number;
-  private readonly store = new Map<K, CacheEntry<V>>();
+export class FileCache<V = unknown> {
+  private readonly cacheDir: string;
 
-  constructor(options: CacheOptions = {}) {
-    this.defaultTtl = options.ttl;
+  /*****************************************************************************
+   * Create cache directory (defaults to OS tmp path).
+   ****************************************************************************/
+  constructor(options: FileCacheOptions = {}) {
+    this.cacheDir = options.cachePath ?? DEFAULT_CACHE_DIR;
+    fs.mkdirSync(this.cacheDir, { recursive: true });
   }
 
-  set(key: K, value: V, ttl?: number): void {
-    const now = Date.now();
-    const effectiveTtl = ttl ?? this.defaultTtl;
-    const expiresAt = effectiveTtl != null ? now + effectiveTtl : undefined;
-    this.store.set(key, { value, expiresAt });
-  }
+  /*****************************************************************************
+   * Retrieve value or return provided default/null if missing or unreadable.
+   ****************************************************************************/
+  get(key: string, defaultValue: V | null = null): V | null {
+    const filename = this.pathForKey(key);
+    if (!fs.existsSync(filename)) return defaultValue;
 
-  get(key: K): V | undefined {
-    const entry = this.store.get(key);
-    if (!entry) return undefined;
-
-    if (this.isExpired(entry)) {
-      this.store.delete(key);
-      return undefined;
+    try {
+      const content = fs.readFileSync(filename, "utf8");
+      return JSON.parse(content) as V;
+    } catch {
+      return defaultValue;
     }
-
-    return entry.value;
   }
 
-  has(key: K): boolean {
-    const entry = this.store.get(key);
-    if (!entry) return false;
-
-    if (this.isExpired(entry)) {
-      this.store.delete(key);
-      return false;
-    }
-
-    return true;
-  }
-
-  delete(key: K): boolean {
-    return this.store.delete(key);
-  }
-
-  clear(): void {
-    this.store.clear();
-  }
-
-  keys(): IterableIterator<K> {
-    return this.store.keys();
-  }
-
-  size(): number {
-    this.pruneExpired();
-    return this.store.size;
-  }
-
-  private isExpired(entry: CacheEntry<V>): boolean {
-    if (entry.expiresAt == null) return false;
-    return entry.expiresAt <= Date.now();
-  }
-
-  private pruneExpired(): void {
-    const now = Date.now();
-    for (const [key, entry] of this.store.entries()) {
-      if (entry.expiresAt != null && entry.expiresAt <= now) {
-        this.store.delete(key);
-      }
-    }
+  /*****************************************************************************
+   * Encode the key into a safe filename inside the cache directory.
+   ****************************************************************************/
+  private pathForKey(key: string): string {
+    const encoded = encodeURIComponent(key);
+    return path.join(this.cacheDir, encoded);
   }
 }
 
-export default MemoryCache;
+export default FileCache;
