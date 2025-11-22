@@ -380,4 +380,39 @@ describe("FileCache", () => {
     assert.equal(value, undefined);
     cleanup();
   });
+
+  it("handles very long keys by hashing them", () => {
+    const { cache, cleanup } = setupCache();
+    const longKey = "x".repeat(300); // Exceeds MAX_KEY_LENGTH
+    cache.put(longKey, "value");
+
+    assert.equal(cache.get(longKey), "value");
+    assert.equal(cache.has(longKey), true);
+
+    cache.forget(longKey);
+    assert.equal(cache.has(longKey), false);
+    cleanup();
+  });
+
+  it("normalizes relative cache paths to absolute", () => {
+    const relativeDir = "./test-cache-relative";
+    const cache = new FileCache({ cachePath: relativeDir });
+
+    cache.put("test", "value");
+    assert.equal(cache.get("test"), "value");
+
+    // Cleanup
+    cache.flush();
+    const absolutePath = path.resolve(relativeDir);
+    fs.rmSync(absolutePath, { recursive: true, force: true });
+  });
+
+  it("stores and retrieves values with special characters in keys", () => {
+    const { cache, cleanup } = setupCache();
+    const specialKey = "user:123/profile?lang=en&format=json";
+
+    cache.put(specialKey, { data: "test" });
+    assert.deepEqual(cache.get(specialKey), { data: "test" });
+    cleanup();
+  });
 });
