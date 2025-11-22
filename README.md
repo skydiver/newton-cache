@@ -1,6 +1,6 @@
 # node-cache
 
-Small, dependency-free in-memory cache with optional TTL for each entry. Ships as an ES module with TypeScript typings.
+Small, dependency-free file-based cache that stores entries as plain text files under a tmp directory. Ships as an ES module with TypeScript typings.
 
 ## Install
 
@@ -10,20 +10,33 @@ npm install node-cache
 
 ## Usage
 
+### Initializing
+
 ```ts
-import { MemoryCache } from "node-cache";
+import { FileCache } from "node-cache";
 
-const cache = new MemoryCache<string, number>({ ttl: 5_000 }); // default TTL (ms)
+// Stores files in the OS tmp directory by default.
+const cache = new FileCache<string>();
 
-cache.set("answer", 42);
-cache.set("short", 1, 100); // override TTL for this entry
-
-cache.get("answer"); // 42
-cache.has("answer"); // true
-cache.size(); // 2
-cache.delete("short");
-cache.clear();
+// Or provide your own directory:
+// const cache = new FileCache({ cachePath: "/var/tmp/my-cache" });
 ```
+
+### Getting items from the cache
+
+```ts
+// If a file named "answer" exists in the cache directory, read it:
+const value = cache.get("answer"); // parsed value, or null if missing
+
+// Provide a default if the file doesn't exist or is unreadable:
+const fallback = cache.get("missing-key", "default");
+```
+
+### How it works
+
+- Files are stored under a cache directory (`<os tmp>/node-cache` by default).
+- Keys are URL-encoded to form the filename (e.g., key `answer` -> `/tmp/node-cache/answer`).
+- `get` reads and JSON-parses the file for the given key, returning `null` or a caller-provided default when missing or invalid.
 
 ## Scripts
 
