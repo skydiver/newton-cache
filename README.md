@@ -104,14 +104,74 @@ const fallback = cache.pull('missing', () => expensiveLookup());
 
 If the entry is missing or expired, the factory runs and the result is written to disk. Otherwise, the cached value is returned. `pull` removes the file after reading.
 
+### Introspection
+
+```ts
+// Get all cache keys
+const keys = cache.keys(); // ['user:1', 'user:2', 'session:abc']
+
+// Count cached items
+const count = cache.count(); // 3
+
+// Get total cache size in bytes
+const bytes = cache.size(); // 1024
+console.log(`Cache size: ${(bytes / 1024).toFixed(2)} KB`);
+```
+
+### Cleanup
+
+```ts
+// Remove expired entries (keeps valid ones)
+const removed = cache.prune();
+console.log(`Removed ${removed} expired entries`);
+
+// Clear everything (removes all entries)
+cache.flush();
+```
+
+### TTL management
+
+```ts
+// Get remaining time-to-live in seconds
+cache.put('session', data, 3600); // 1 hour
+const ttl = cache.ttl('session'); // e.g., 3599
+
+// Extend TTL of existing entry
+cache.touch('session', 7200); // Extend to 2 hours from now
+
+// Remove expiration
+cache.touch('session', Number.POSITIVE_INFINITY);
+```
+
+### Atomic counters
+
+```ts
+// Increment counters
+cache.increment('page-views');       // 1
+cache.increment('page-views');       // 2
+cache.increment('page-views', 10);   // 12
+
+// Decrement counters
+cache.put('credits', 100);
+cache.decrement('credits');          // 99
+cache.decrement('credits', 20);      // 79
+
+// Use together
+cache.increment('balance', 50);      // 50
+cache.decrement('balance', 10);      // 40
+```
+
 ### How it works
 
 - Files are stored under a cache directory (`<os tmp>/node-cache` by default).
 - Keys are URL-encoded to form the filename (e.g., key `answer` -> `/tmp/node-cache/answer`).
-- Each file stores a JSON payload: `{ "value": <your data>, "expiresAt": <timestamp|undefined> }`.
+- Very long keys (>200 chars) are SHA-256 hashed to prevent filesystem limits.
+- Each file stores a JSON payload: `{ "value": <your data>, "expiresAt": <timestamp|undefined>, "key": "<original key>" }`.
 - `get` reads and JSON-parses the file for the given key, returning `undefined` or a caller-provided default when missing, invalid, or expired (expired files are deleted).
 - `has` returns true only when the file exists, parses, is not expired, and the stored `value` is defined.
-- `remember` writes the payload with an `expiresAt` timestamp when given a TTL (seconds). `rememberForever` omits `expiresAt`. If you pass complex objects, they're serialized with `JSON.stringify`; the timestamp sits alongside your data.
+- `remember` writes the payload with an `expiresAt` timestamp when given a TTL (seconds). `rememberForever` omits `expiresAt`.
+- `prune()` removes only expired entries, while `flush()` removes everything.
+- Counters (`increment`/`decrement`) are atomic and preserve existing TTL.
 
 ## Scripts
 

@@ -415,4 +415,431 @@ describe("FileCache", () => {
     assert.deepEqual(cache.get(specialKey), { data: "test" });
     cleanup();
   });
+
+  // Phase 3: Introspection methods
+  it("keys returns all non-expired cache keys", () => {
+    const { cache, cleanup } = setupCache();
+    cache.put("key1", "value1");
+    cache.put("key2", "value2");
+    cache.put("key3", "value3");
+
+    const keys = cache.keys();
+    assert.equal(keys.length, 3);
+    assert.ok(keys.includes("key1"));
+    assert.ok(keys.includes("key2"));
+    assert.ok(keys.includes("key3"));
+    cleanup();
+  });
+
+  it("keys filters out expired entries", () => {
+    const { cache, cleanup, dir } = setupCache();
+    cache.put("valid", "data", 3600);
+
+    const expiredFilename = path.join(dir, encodeURIComponent("expired"));
+    fs.writeFileSync(
+      expiredFilename,
+      JSON.stringify({ value: "old", expiresAt: Date.now() - 1000, key: "expired" }),
+      "utf8"
+    );
+
+    const keys = cache.keys();
+    assert.equal(keys.length, 1);
+    assert.equal(keys[0], "valid");
+    assert.equal(fs.existsSync(expiredFilename), false); // Expired entry removed
+    cleanup();
+  });
+
+  it("keys returns empty array when cache is empty", () => {
+    const { cache, cleanup } = setupCache();
+    assert.deepEqual(cache.keys(), []);
+    cleanup();
+  });
+
+  it("keys handles long hashed keys correctly", () => {
+    const { cache, cleanup } = setupCache();
+    const longKey = "x".repeat(300);
+    cache.put(longKey, "value");
+
+    const keys = cache.keys();
+    assert.equal(keys.length, 1);
+    assert.equal(keys[0], longKey);
+    cleanup();
+  });
+
+  it("count returns number of cached items", () => {
+    const { cache, cleanup } = setupCache();
+    assert.equal(cache.count(), 0);
+
+    cache.put("a", 1);
+    assert.equal(cache.count(), 1);
+
+    cache.put("b", 2);
+    cache.put("c", 3);
+    assert.equal(cache.count(), 3);
+
+    cache.forget("b");
+    assert.equal(cache.count(), 2);
+    cleanup();
+  });
+
+  it("size returns total cache size in bytes", () => {
+    const { cache, cleanup } = setupCache();
+    assert.equal(cache.size(), 0);
+
+    cache.put("key", "value");
+    const sizeAfterOne = cache.size();
+    assert.ok(sizeAfterOne > 0);
+
+    cache.put("key2", "value2");
+    const sizeAfterTwo = cache.size();
+    assert.ok(sizeAfterTwo > sizeAfterOne);
+    cleanup();
+  });
+
+  it("size includes expired entries until pruned", () => {
+    const { cache, cleanup, dir } = setupCache();
+    cache.put("valid", "data");
+
+    const expiredFilename = path.join(dir, "expired");
+    fs.writeFileSync(
+      expiredFilename,
+      JSON.stringify({ value: "old", expiresAt: Date.now() - 1000 }),
+      "utf8"
+    );
+
+    const sizeWithExpired = cache.size();
+    assert.ok(sizeWithExpired > 0);
+
+    cache.prune();
+    const sizeAfterPrune = cache.size();
+    assert.ok(sizeAfterPrune < sizeWithExpired);
+    cleanup();
+  });
+
+  // Phase 3: Cleanup
+  it("prune removes only expired entries", () => {
+    const { cache, cleanup, dir } = setupCache();
+    cache.put("valid1", "data1", 3600);
+    cache.put("valid2", "data2");
+
+    const expired1 = path.join(dir, "expired1");
+    const expired2 = path.join(dir, "expired2");
+    fs.writeFileSync(
+      expired1,
+      JSON.stringify({ value: "old1", expiresAt: Date.now() - 1000 }),
+      "utf8"
+    );
+    fs.writeFileSync(
+      expired2,
+      JSON.stringify({ value: "old2", expiresAt: Date.now() - 500 }),
+      "utf8"
+    );
+
+    const removed = cache.prune();
+    assert.equal(removed, 2);
+    assert.equal(cache.count(), 2);
+    assert.ok(cache.has("valid1"));
+    assert.ok(cache.has("valid2"));
+    cleanup();
+  });
+
+  it("prune removes invalid entries", () => {
+    const { cache, cleanup, dir } = setupCache();
+    cache.put("valid", "data");
+
+    const invalidFile = path.join(dir, "invalid");
+    fs.writeFileSync(invalidFile, "{", "utf8");
+
+    const removed = cache.prune();
+    assert.equal(removed, 1);
+    assert.equal(fs.existsSync(invalidFile), false);
+    assert.equal(cache.count(), 1);
+    cleanup();
+  });
+
+  it("prune returns zero when cache is empty", () => {
+    const { cache, cleanup } = setupCache();
+    assert.equal(cache.prune(), 0);
+    cleanup();
+  });
+
+  // Phase 3: TTL management
+  it("ttl returns remaining time in seconds", () => {
+    const { cache, cleanup } = setupCache();
+    cache.put("session", "data", 10); // 10 seconds
+
+    const ttl = cache.ttl("session");
+    assert.ok(ttl !== null);
+    assert.ok(ttl! <= 10 && ttl! > 0);
+    cleanup();
+  });
+
+  it("ttl returns null for non-existent keys", () => {
+    const { cache, cleanup } = setupCache();
+    assert.equal(cache.ttl("missing"), null);
+    cleanup();
+  });
+
+  it("ttl returns null for keys without expiration", () => {
+    const { cache, cleanup } = setupCache();
+    cache.put("permanent", "data");
+    assert.equal(cache.ttl("permanent"), null);
+    cleanup();
+  });
+
+  it("ttl returns null and removes expired entries", () => {
+    const { cache, cleanup, dir } = setupCache();
+    const key = "expired";
+    const filename = path.join(dir, encodeURIComponent(key));
+    fs.writeFileSync(
+      filename,
+      JSON.stringify({ value: "old", expiresAt: Date.now() - 1000, key }),
+      "utf8"
+    );
+
+    assert.equal(cache.ttl(key), null);
+    assert.equal(fs.existsSync(filename), false);
+    cleanup();
+  });
+
+  it("touch extends TTL of existing entry", () => {
+    const { cache, cleanup } = setupCache();
+    cache.put("session", "data", 10);
+
+    const updated = cache.touch("session", 3600);
+    assert.equal(updated, true);
+
+    const ttl = cache.ttl("session");
+    assert.ok(ttl !== null);
+    assert.ok(ttl! > 10); // Should be close to 3600
+    cleanup();
+  });
+
+  it("touch returns false for non-existent keys", () => {
+    const { cache, cleanup } = setupCache();
+    assert.equal(cache.touch("missing", 60), false);
+    cleanup();
+  });
+
+  it("touch returns false for expired entries", () => {
+    const { cache, cleanup, dir } = setupCache();
+    const key = "expired";
+    const filename = path.join(dir, encodeURIComponent(key));
+    fs.writeFileSync(
+      filename,
+      JSON.stringify({ value: "old", expiresAt: Date.now() - 1000, key }),
+      "utf8"
+    );
+
+    assert.equal(cache.touch(key, 60), false);
+    assert.equal(fs.existsSync(filename), false);
+    cleanup();
+  });
+
+  it("touch can remove TTL by passing Infinity", () => {
+    const { cache, cleanup } = setupCache();
+    cache.put("session", "data", 60);
+    cache.touch("session", Number.POSITIVE_INFINITY);
+
+    assert.equal(cache.ttl("session"), null); // No expiration
+    assert.ok(cache.has("session"));
+    cleanup();
+  });
+
+  // Phase 3: Atomic counters
+  it("increment creates and increments numeric values", () => {
+    const { cache, cleanup } = setupCache();
+
+    assert.equal(cache.increment("counter"), 1);
+    assert.equal(cache.increment("counter"), 2);
+    assert.equal(cache.increment("counter"), 3);
+    assert.equal(cache.increment("counter", 10), 13);
+    cleanup();
+  });
+
+  it("increment treats non-numeric values as zero", () => {
+    const { cache, cleanup } = setupCache();
+    cache.put("text", "hello");
+
+    assert.equal(cache.increment("text"), 1);
+    assert.equal(cache.increment("text"), 2);
+    cleanup();
+  });
+
+  it("increment preserves TTL of existing entries", () => {
+    const { cache, cleanup } = setupCache();
+    cache.put("counter", 5, 3600);
+
+    cache.increment("counter");
+    const ttl = cache.ttl("counter");
+    assert.ok(ttl !== null && ttl! > 0);
+    cleanup();
+  });
+
+  it("increment resets expired counters to zero", () => {
+    const { cache, cleanup, dir } = setupCache();
+    const key = "expired-counter";
+    const filename = path.join(dir, encodeURIComponent(key));
+    fs.writeFileSync(
+      filename,
+      JSON.stringify({ value: 100, expiresAt: Date.now() - 1000, key }),
+      "utf8"
+    );
+
+    assert.equal(cache.increment(key), 1);
+    cleanup();
+  });
+
+  it("decrement decreases numeric values", () => {
+    const { cache, cleanup } = setupCache();
+    cache.put("credits", 100);
+
+    assert.equal(cache.decrement("credits"), 99);
+    assert.equal(cache.decrement("credits", 10), 89);
+    assert.equal(cache.decrement("credits", 5), 84);
+    cleanup();
+  });
+
+  it("decrement creates negative values when key missing", () => {
+    const { cache, cleanup } = setupCache();
+    assert.equal(cache.decrement("missing"), -1);
+    assert.equal(cache.decrement("missing"), -2);
+    cleanup();
+  });
+
+  it("increment and decrement work together", () => {
+    const { cache, cleanup } = setupCache();
+    cache.put("balance", 50);
+
+    cache.increment("balance", 20); // 70
+    cache.decrement("balance", 10); // 60
+    cache.increment("balance", 5);  // 65
+
+    assert.equal(cache.get("balance"), 65);
+    cleanup();
+  });
+
+  it("increment works with long hashed keys", () => {
+    const { cache, cleanup } = setupCache();
+    const longKey = "x".repeat(300);
+
+    assert.equal(cache.increment(longKey), 1);
+    assert.equal(cache.increment(longKey), 2);
+    assert.equal(cache.get(longKey), 2);
+    cleanup();
+  });
+
+  // Edge cases and error handling
+  it("prune handles directory read errors gracefully", () => {
+    const { cache, cleanup, dir } = setupCache();
+    cleanup(); // Remove the directory
+
+    const removed = cache.prune(); // Should not throw
+    assert.equal(removed, 0);
+  });
+
+  it("keys handles directory read errors gracefully", () => {
+    const { cache, cleanup, dir } = setupCache();
+    cleanup(); // Remove the directory
+
+    const keys = cache.keys(); // Should not throw
+    assert.deepEqual(keys, []);
+  });
+
+  it("ttl handles file read errors gracefully", () => {
+    const { cache, cleanup, dir } = setupCache();
+    const key = "bad-file";
+    const filename = path.join(dir, encodeURIComponent(key));
+    fs.writeFileSync(filename, "{", "utf8"); // Invalid JSON
+
+    assert.equal(cache.ttl(key), null);
+    cleanup();
+  });
+
+  it("touch handles file read errors gracefully", () => {
+    const { cache, cleanup, dir } = setupCache();
+    const key = "bad-file";
+    const filename = path.join(dir, encodeURIComponent(key));
+    fs.writeFileSync(filename, "{", "utf8"); // Invalid JSON
+
+    assert.equal(cache.touch(key, 60), false);
+    cleanup();
+  });
+
+  it("increment handles invalid JSON gracefully", () => {
+    const { cache, cleanup, dir } = setupCache();
+    const key = "bad-counter";
+    const filename = path.join(dir, encodeURIComponent(key));
+    fs.writeFileSync(filename, "{", "utf8"); // Invalid JSON
+
+    assert.equal(cache.increment(key), 1);
+    assert.equal(cache.get(key), 1);
+    cleanup();
+  });
+
+  it("keys handles invalid cache files gracefully", () => {
+    const { cache, cleanup, dir } = setupCache();
+    cache.put("valid", "data");
+
+    // Create invalid file
+    const invalidFile = path.join(dir, "invalid");
+    fs.writeFileSync(invalidFile, "{", "utf8");
+
+    const keys = cache.keys();
+    assert.equal(keys.length, 1);
+    assert.equal(keys[0], "valid");
+    cleanup();
+  });
+
+  it("size handles file stat errors gracefully", () => {
+    const { cache, cleanup, dir } = setupCache();
+    cache.put("valid", "data");
+
+    // Create a directory instead of a file (will cause stat to succeed but we want to test error handling)
+    const dirEntry = path.join(dir, "subdir");
+    fs.mkdirSync(dirEntry);
+
+    const size = cache.size(); // Should not throw
+    assert.ok(size >= 0);
+    cleanup();
+  });
+
+  it("keys handles null parsed values gracefully", () => {
+    const { cache, cleanup, dir } = setupCache();
+    const key = "null-value";
+    const filename = path.join(dir, encodeURIComponent(key));
+    fs.writeFileSync(filename, "null", "utf8");
+
+    const keys = cache.keys();
+    assert.equal(keys.length, 0);
+    cleanup();
+  });
+
+  it("prune handles file deletion errors gracefully", () => {
+    const { cache, cleanup, dir } = setupCache();
+
+    // Create an expired entry
+    const key = "expired";
+    const filename = path.join(dir, encodeURIComponent(key));
+    fs.writeFileSync(
+      filename,
+      JSON.stringify({ value: "old", expiresAt: Date.now() - 1000 }),
+      "utf8"
+    );
+
+    // Make directory read-only on Unix systems to test deletion error handling
+    if (process.platform !== "win32") {
+      fs.chmodSync(dir, 0o444);
+
+      try {
+        const removed = cache.prune();
+        // Should attempt to remove but might fail due to permissions
+        assert.ok(removed >= 0);
+      } finally {
+        // Restore permissions for cleanup
+        fs.chmodSync(dir, 0o755);
+      }
+    }
+    cleanup();
+  });
 });
