@@ -16,11 +16,13 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "clean": "rimraf dist",
-    "test": "node --test dist"
+    "test": "node --test dist",
+    "test:coverage": "npm run build && c8 -r text -r lcov node --test dist"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.0",
     "@types/node": "^24.0.0",
+    "c8": "^9.1.0",
     "rimraf": "^6.0.0",
     "typescript": "^5.4.0"
   },
