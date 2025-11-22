@@ -28,10 +28,43 @@ export class FileCache<V = unknown> {
 
     try {
       const content = fs.readFileSync(filename, "utf8");
-      return JSON.parse(content) as V;
+      const parsed = JSON.parse(content) as { value: V; expiresAt?: number } | null;
+      if (!parsed) return this.resolveDefault(defaultValue);
+
+      if (parsed.expiresAt != null && parsed.expiresAt <= Date.now()) {
+        fs.unlinkSync(filename);
+        return this.resolveDefault(defaultValue);
+      }
+
+      return parsed.value;
     } catch {
       return this.resolveDefault(defaultValue);
     }
+  }
+
+  /*****************************************************************************
+   * Retrieve value or store the computed default when missing/expired.
+   ****************************************************************************/
+  remember(key: string, seconds: number, factory: () => V): V {
+    const filename = this.pathForKey(key);
+
+    if (this.has(key)) {
+      const existing = this.get(key);
+      if (existing !== null) return existing;
+    }
+
+    const value = factory();
+    const expiresAt = Number.isFinite(seconds) ? Date.now() + seconds * 1000 : undefined;
+    const payload = JSON.stringify({ value, expiresAt });
+    fs.writeFileSync(filename, payload, "utf8");
+    return value;
+  }
+
+  /*****************************************************************************
+   * Retrieve value or store it forever when missing.
+   ****************************************************************************/
+  rememberForever(key: string, factory: () => V): V {
+    return this.remember(key, Number.POSITIVE_INFINITY, factory);
   }
 
   /*****************************************************************************
@@ -40,6 +73,29 @@ export class FileCache<V = unknown> {
   private pathForKey(key: string): string {
     const encoded = encodeURIComponent(key);
     return path.join(this.cacheDir, encoded);
+  }
+
+  /*****************************************************************************
+   * Determine if a value exists and is not null.
+   ****************************************************************************/
+  has(key: string): boolean {
+    const filename = this.pathForKey(key);
+    if (!fs.existsSync(filename)) return false;
+
+    try {
+      const content = fs.readFileSync(filename, "utf8");
+      const parsed = JSON.parse(content) as { value: V; expiresAt?: number } | null;
+      if (!parsed) return false;
+
+      if (parsed.expiresAt != null && parsed.expiresAt <= Date.now()) {
+        fs.unlinkSync(filename);
+        return false;
+      }
+
+      return parsed.value !== null;
+    } catch {
+      return false;
+    }
   }
 
   /*****************************************************************************

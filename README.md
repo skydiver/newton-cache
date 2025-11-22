@@ -44,11 +44,35 @@ const twoLine = cache.get("computed", () => {
 });
 ```
 
+### Checking existence
+
+```ts
+// Returns true when the file exists and contains a non-null value.
+if (cache.has("answer")) {
+  // ...
+}
+```
+
+### Get or store information on the cache
+
+```ts
+// Retrieve or compute and store for 60 seconds:
+const users = cache.remember("users", 60, () => fetchUsers());
+
+// Store forever when missing:
+const usersAlways = cache.rememberForever("users", () => fetchUsers());
+```
+
+If the entry is missing or expired, the factory runs and the result is written to disk. Otherwise, the cached value is returned.
+
 ### How it works
 
 - Files are stored under a cache directory (`<os tmp>/node-cache` by default).
 - Keys are URL-encoded to form the filename (e.g., key `answer` -> `/tmp/node-cache/answer`).
-- `get` reads and JSON-parses the file for the given key, returning `null` or a caller-provided default when missing or invalid.
+- Each file stores a JSON payload: `{ "value": <your data>, "expiresAt": <timestamp|undefined> }`.
+- `get` reads and JSON-parses the file for the given key, returning `null` or a caller-provided default when missing, invalid, or expired (expired files are deleted).
+- `has` returns true only when the file exists, parses, is not expired, and the stored `value` is not `null`.
+- `remember` writes the payload with an `expiresAt` timestamp when given a TTL (seconds). If you pass complex objects, they're serialized with `JSON.stringify`; the timestamp is stored alongside, not inside, your data.
 
 ## Scripts
 
