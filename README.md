@@ -30,6 +30,18 @@ const value = cache.get("answer"); // parsed value, or null if missing
 
 // Provide a default if the file doesn't exist or is unreadable:
 const fallback = cache.get("missing-key", "default");
+
+// Or pass a factory/closure so the default is only computed when needed:
+const fromFactory = cache.get("missing", () => expensiveLookup());
+
+// You can also pass the function reference directly:
+const directFactory = cache.get("missing", expensiveLookup);
+
+// Inline anonymous factory
+const twoLine = cache.get("computed", () => {
+  const value = expensiveLookup();
+  return value;
+});
 ```
 
 ### How it works

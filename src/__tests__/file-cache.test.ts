@@ -25,6 +25,13 @@ describe("FileCache", () => {
     cleanup();
   });
 
+  it("invokes default factory when key is missing", () => {
+    const { cache, cleanup } = setupCache();
+    const value = cache.get("missing", () => "from-factory");
+    assert.equal(value, "from-factory");
+    cleanup();
+  });
+
   it("stores and retrieves values on disk", () => {
     const { cache, cleanup, dir } = setupCache();
     const key = "answer";

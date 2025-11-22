@@ -22,15 +22,15 @@ export class FileCache<V = unknown> {
   /*****************************************************************************
    * Retrieve value or return provided default/null if missing or unreadable.
    ****************************************************************************/
-  get(key: string, defaultValue: V | null = null): V | null {
+  get(key: string, defaultValue: V | null | (() => V) = null): V | null {
     const filename = this.pathForKey(key);
-    if (!fs.existsSync(filename)) return defaultValue;
+    if (!fs.existsSync(filename)) return this.resolveDefault(defaultValue);
 
     try {
       const content = fs.readFileSync(filename, "utf8");
       return JSON.parse(content) as V;
     } catch {
-      return defaultValue;
+      return this.resolveDefault(defaultValue);
     }
   }
 
@@ -40,6 +40,20 @@ export class FileCache<V = unknown> {
   private pathForKey(key: string): string {
     const encoded = encodeURIComponent(key);
     return path.join(this.cacheDir, encoded);
+  }
+
+  /*****************************************************************************
+   * Resolve default value; invoke factory when provided.
+   ****************************************************************************/
+  private resolveDefault(defaultValue: V | null | (() => V)): V | null {
+    if (typeof defaultValue === "function") {
+      try {
+        return (defaultValue as () => V)();
+      } catch {
+        return null;
+      }
+    }
+    return defaultValue;
   }
 }
 
