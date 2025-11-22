@@ -13,7 +13,7 @@ npm install node-cache
 ### Initializing
 
 ```ts
-import { FileCache } from "node-cache";
+import { FileCache } from 'node-cache';
 
 // Stores files in the OS tmp directory by default.
 const cache = new FileCache<string>();
@@ -26,19 +26,19 @@ const cache = new FileCache<string>();
 
 ```ts
 // If a file named "answer" exists in the cache directory, read it:
-const value = cache.get("answer"); // parsed value, or null if missing
+const value = cache.get('answer'); // parsed value, or null if missing
 
 // Provide a default if the file doesn't exist or is unreadable:
-const fallback = cache.get("missing-key", "default");
+const fallback = cache.get('missing-key', 'default');
 
 // Or pass a factory/closure so the default is only computed when needed:
-const fromFactory = cache.get("missing", () => expensiveLookup());
+const fromFactory = cache.get('missing', () => expensiveLookup());
 
 // You can also pass the function reference directly:
-const directFactory = cache.get("missing", expensiveLookup);
+const directFactory = cache.get('missing', expensiveLookup);
 
 // Inline anonymous factory
-const twoLine = cache.get("computed", () => {
+const twoLine = cache.get('computed', () => {
   const value = expensiveLookup();
   return value;
 });
@@ -48,22 +48,35 @@ const twoLine = cache.get("computed", () => {
 
 ```ts
 // Returns true when the file exists and contains a non-null value.
-if (cache.has("answer")) {
+if (cache.has('answer')) {
   // ...
 }
 ```
 
-### Get or store information on the cache
+### Remember (get or store)
 
 ```ts
-// Retrieve or compute and store for 60 seconds:
-const users = cache.remember("users", 60, () => fetchUsers());
+// Retrieve or compute and store for 60 seconds (TTL is in seconds):
+const users = cache.remember('users', 60, () => fetchUsers());
 
 // Store forever when missing:
-const usersAlways = cache.rememberForever("users", () => fetchUsers());
+const usersAlways = cache.rememberForever('users', () => fetchUsers());
 ```
 
-If the entry is missing or expired, the factory runs and the result is written to disk. Otherwise, the cached value is returned.
+### Pulling (get and delete)
+
+```ts
+// Retrieve and remove the cached value. Returns null when missing.
+const pulled = cache.pull('answer');
+
+// Provide a static default:
+const staticDefault = cache.pull('missing', 'default');
+
+// Provide a default (or factory) when missing:
+const fallback = cache.pull('missing', () => expensiveLookup());
+```
+
+If the entry is missing or expired, the factory runs and the result is written to disk. Otherwise, the cached value is returned. `pull` removes the file after reading.
 
 ### How it works
 
@@ -72,7 +85,7 @@ If the entry is missing or expired, the factory runs and the result is written t
 - Each file stores a JSON payload: `{ "value": <your data>, "expiresAt": <timestamp|undefined> }`.
 - `get` reads and JSON-parses the file for the given key, returning `null` or a caller-provided default when missing, invalid, or expired (expired files are deleted).
 - `has` returns true only when the file exists, parses, is not expired, and the stored `value` is not `null`.
-- `remember` writes the payload with an `expiresAt` timestamp when given a TTL (seconds). If you pass complex objects, they're serialized with `JSON.stringify`; the timestamp is stored alongside, not inside, your data.
+- `remember` writes the payload with an `expiresAt` timestamp when given a TTL (seconds). `rememberForever` omits `expiresAt`. If you pass complex objects, they're serialized with `JSON.stringify`; the timestamp sits alongside your data.
 
 ## Scripts
 

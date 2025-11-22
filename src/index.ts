@@ -43,6 +43,40 @@ export class FileCache<V = unknown> {
   }
 
   /*****************************************************************************
+   * Retrieve and delete value; returns default/null if missing or unreadable.
+   ****************************************************************************/
+  pull(key: string, defaultValue: V | null | (() => V) = null): V | null {
+    const filename = this.pathForKey(key);
+    if (!fs.existsSync(filename)) return this.resolveDefault(defaultValue);
+
+    try {
+      const content = fs.readFileSync(filename, "utf8");
+      const parsed = JSON.parse(content) as { value: V; expiresAt?: number } | null;
+      if (!parsed) {
+        fs.unlinkSync(filename);
+        return this.resolveDefault(defaultValue);
+      }
+
+      if (parsed.expiresAt != null && parsed.expiresAt <= Date.now()) {
+        fs.unlinkSync(filename);
+        return this.resolveDefault(defaultValue);
+      }
+
+      fs.unlinkSync(filename);
+      return parsed.value;
+    } catch {
+      if (fs.existsSync(filename)) {
+        try {
+          fs.unlinkSync(filename);
+        } catch {
+          /* ignore */
+        }
+      }
+      return this.resolveDefault(defaultValue);
+    }
+  }
+
+  /*****************************************************************************
    * Retrieve value or store the computed default when missing/expired.
    ****************************************************************************/
   remember(key: string, seconds: number, factory: () => V): V {

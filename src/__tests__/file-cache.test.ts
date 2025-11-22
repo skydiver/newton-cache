@@ -103,4 +103,32 @@ describe("FileCache", () => {
     assert.equal(Object.prototype.hasOwnProperty.call(payload, "expiresAt"), false);
     cleanup();
   });
+
+  it("pull returns value and deletes the file", () => {
+    const { cache, cleanup, dir } = setupCache();
+    const key = "pull-me";
+    const filename = path.join(dir, encodeURIComponent(key));
+    fs.writeFileSync(filename, JSON.stringify({ value: 99 }), "utf8");
+
+    const value = cache.pull(key);
+    assert.equal(value, 99);
+    assert.equal(fs.existsSync(filename), false);
+    cleanup();
+  });
+
+  it("pull returns default when missing or expired", () => {
+    const { cache, cleanup, dir } = setupCache();
+    const expiredKey = "old";
+    const filename = path.join(dir, encodeURIComponent(expiredKey));
+    fs.writeFileSync(
+      filename,
+      JSON.stringify({ value: 1, expiresAt: Date.now() - 1000 }),
+      "utf8"
+    );
+
+    assert.equal(cache.pull("missing", "default"), "default");
+    assert.equal(cache.pull(expiredKey, () => "from-factory"), "from-factory");
+    assert.equal(fs.existsSync(filename), false);
+    cleanup();
+  });
 });
