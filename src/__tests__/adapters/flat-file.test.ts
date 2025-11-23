@@ -537,4 +537,138 @@ describe("FlatFileCache", () => {
     assert.equal(cache.get("valid"), "data");
     cleanup();
   });
+
+  it("get with expired entry deletes and saves to disk", async () => {
+    const { cache, filePath, cleanup } = setupCache();
+    cache.put("key", "value", 0.01); // 10ms TTL
+    await new Promise((resolve) => setTimeout(resolve, 50)); // Wait for expiry
+
+    assert.equal(cache.get("key", "default"), "default");
+    const payload = readPayload(filePath);
+    assert.equal(Object.prototype.hasOwnProperty.call(payload, "key"), false);
+    cleanup();
+  });
+
+  it("has with expired entry deletes and saves to disk", async () => {
+    const { cache, filePath, cleanup } = setupCache();
+    cache.put("expired", "old", 0.01); // 10ms TTL
+    await new Promise((resolve) => setTimeout(resolve, 50)); // Wait for expiry
+
+    assert.equal(cache.has("expired"), false);
+    const payload = readPayload(filePath);
+    assert.equal(Object.prototype.hasOwnProperty.call(payload, "expired"), false);
+    cleanup();
+  });
+
+  it("flush removes file when it doesn't exist", () => {
+    const { cache, filePath, cleanup } = setupCache();
+    cache.flush();
+    assert.equal(fs.existsSync(filePath), false);
+    cache.flush(); // Call again when file doesn't exist
+    assert.equal(fs.existsSync(filePath), false);
+    cleanup();
+  });
+
+  it("keys with expired entries saves to disk after filtering", async () => {
+    const { cache, filePath, cleanup } = setupCache();
+    cache.put("valid", "data");
+    cache.put("expired", "old", 0.01); // 10ms TTL
+    await new Promise((resolve) => setTimeout(resolve, 50)); // Wait for expiry
+
+    const keys = cache.keys();
+    assert.equal(keys.length, 1);
+    assert.equal(keys[0], "valid");
+    const payload = readPayload(filePath);
+    assert.equal(Object.prototype.hasOwnProperty.call(payload, "expired"), false);
+    cleanup();
+  });
+
+  it("ttl with expired entry deletes and saves to disk", async () => {
+    const { cache, filePath, cleanup } = setupCache();
+    cache.put("expired", "old", 0.01); // 10ms TTL
+    await new Promise((resolve) => setTimeout(resolve, 50)); // Wait for expiry
+
+    assert.equal(cache.ttl("expired"), null);
+    const payload = readPayload(filePath);
+    assert.equal(Object.prototype.hasOwnProperty.call(payload, "expired"), false);
+    cleanup();
+  });
+
+  it("touch with expired entry deletes and saves to disk", async () => {
+    const { cache, filePath, cleanup } = setupCache();
+    cache.put("expired", "old", 0.01); // 10ms TTL
+    await new Promise((resolve) => setTimeout(resolve, 50)); // Wait for expiry
+
+    assert.equal(cache.touch("expired", 60), false);
+    const payload = readPayload(filePath);
+    assert.equal(Object.prototype.hasOwnProperty.call(payload, "expired"), false);
+    cleanup();
+  });
+
+  it("pull with expired entry saves and returns default", async () => {
+    const { cache, filePath, cleanup } = setupCache();
+    cache.put("expired", "old", 0.01); // 10ms TTL
+    await new Promise((resolve) => setTimeout(resolve, 50)); // Wait for expiry
+
+    assert.equal(cache.pull("expired", "default"), "default");
+    const payload = readPayload(filePath);
+    assert.equal(Object.prototype.hasOwnProperty.call(payload, "expired"), false);
+    cleanup();
+  });
+
+  it("prune removes expired entries and saves to disk", async () => {
+    const { cache, filePath, cleanup } = setupCache();
+    cache.put("valid", "data");
+    cache.put("expired", "old", 0.01); // 10ms TTL
+    await new Promise((resolve) => setTimeout(resolve, 50)); // Wait for expiry
+
+    const removed = cache.prune();
+    assert.ok(removed > 0);
+    const payload = readPayload(filePath);
+    assert.ok(payload.valid);
+    assert.equal(Object.prototype.hasOwnProperty.call(payload, "expired"), false);
+    cleanup();
+  });
+
+  it("saveToDisk handles write errors gracefully", () => {
+    const { cleanup } = setupCache();
+    const invalidPath = "/invalid/path/that/does/not/exist/cache.json";
+    const cache = new FlatFileCache({ filePath: invalidPath });
+
+    // This should not throw even though the path is invalid
+    cache.put("key", "value");
+    assert.equal(cache.get("key"), "value"); // Value is in memory
+    cleanup();
+  });
+
+  it("loadFromDisk handles empty file content", () => {
+    const { cache, filePath, cleanup } = setupCache();
+    fs.writeFileSync(filePath, "   \n  ", "utf8"); // Whitespace only
+
+    const freshCache = new FlatFileCache({ filePath });
+    assert.equal(freshCache.count(), 0);
+    cleanup();
+  });
+
+  it("pull returns undefined when stored value is null", () => {
+    const { cache, filePath, cleanup } = setupCache();
+    writePayload(filePath, { key: { value: null, key: "key" } });
+
+    const freshCache = new FlatFileCache({ filePath });
+    assert.equal(freshCache.pull("key"), undefined);
+    cleanup();
+  });
+
+  it("touch preserves key when entry.key is null via store manipulation", () => {
+    const { cache, filePath, cleanup } = setupCache();
+    // Directly manipulate the private store to create entry with null key
+    // This tests the defensive ?? fallback in touch() at line 198
+    (cache as any).loaded = true;
+    (cache as any).store.set("testkey", { value: "data", key: null });
+
+    assert.equal(cache.touch("testkey", 60), true);
+    const payload = readPayload(filePath);
+    assert.equal(payload.testkey?.key, "testkey");
+    cleanup();
+  });
 });
