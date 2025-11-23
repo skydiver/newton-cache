@@ -193,3 +193,105 @@ export interface CacheAdapter<V = unknown> {
    */
   forgetMany(keys: string[]): number;
 }
+
+/**
+ * Abstract base class that provides shared implementations for cache adapters.
+ * Implements common batch operations and helper methods that delegate to primitive operations.
+ *
+ * Concrete adapters only need to implement the primitive operations (get, put, has, etc.).
+ * Batch operations (getMany, putMany, forgetMany) are automatically provided and can be
+ * overridden for adapter-specific optimizations (e.g., Redis MGET/MSET).
+ *
+ * @template V - The type of values stored in the cache
+ */
+export abstract class BaseCacheAdapter<V = unknown> implements CacheAdapter<V> {
+  // Abstract primitive methods - each adapter must implement these
+  abstract get(key: string, defaultValue?: V | (() => V)): V | undefined;
+  abstract put(key: string, value: V, seconds?: number): void;
+  abstract forget(key: string): boolean;
+  abstract has(key: string): boolean;
+  abstract flush(): void;
+  abstract forever(key: string, value: V): void;
+  abstract add(key: string, value: V, seconds?: number): boolean;
+  abstract pull(key: string, defaultValue?: V | (() => V)): V | undefined;
+  abstract remember(key: string, seconds: number, factory: () => V): V;
+  abstract rememberForever(key: string, factory: () => V): V;
+  abstract keys(): string[];
+  abstract count(): number;
+  abstract size(): number;
+  abstract prune(): number;
+  abstract ttl(key: string): number | null;
+  abstract touch(key: string, seconds: number): boolean;
+  abstract increment(key: string, amount?: number): number;
+  abstract decrement(key: string, amount?: number): number;
+
+  /**
+   * Retrieves multiple cached values by their keys.
+   * Delegates to the get() method for each key.
+   *
+   * Can be overridden by adapters that support native batch operations.
+   *
+   * @param keys - Array of cache keys to retrieve
+   * @returns Object mapping keys to their values (undefined for missing/expired keys)
+   */
+  getMany(keys: string[]): Record<string, V | undefined> {
+    const result: Record<string, V | undefined> = {};
+    for (const key of keys) {
+      result[key] = this.get(key);
+    }
+    return result;
+  }
+
+  /**
+   * Stores multiple key-value pairs in the cache with an optional TTL.
+   * Delegates to the put() method for each key-value pair.
+   *
+   * Can be overridden by adapters that support native batch operations.
+   *
+   * @param items - Object containing key-value pairs to store
+   * @param seconds - Optional TTL in seconds (omit for no expiration)
+   */
+  putMany(items: Record<string, V>, seconds?: number): void {
+    for (const [key, value] of Object.entries(items)) {
+      this.put(key, value, seconds);
+    }
+  }
+
+  /**
+   * Removes multiple items from the cache.
+   * Delegates to the forget() method for each key.
+   *
+   * Can be overridden by adapters that support native batch operations.
+   *
+   * @param keys - Array of cache keys to remove
+   * @returns The number of items that were actually removed
+   */
+  forgetMany(keys: string[]): number {
+    let removed = 0;
+    for (const key of keys) {
+      if (this.forget(key)) {
+        removed++;
+      }
+    }
+    return removed;
+  }
+
+  /**
+   * Helper method to resolve default values.
+   * If the default is a function, invokes it and returns the result.
+   * If the function throws, returns undefined.
+   *
+   * @param defaultValue - Static value or factory function
+   * @returns The resolved default value or undefined
+   */
+  protected resolveDefault(defaultValue?: V | (() => V)): V | undefined {
+    if (typeof defaultValue === "function") {
+      try {
+        return (defaultValue as () => V)();
+      } catch {
+        return undefined;
+      }
+    }
+    return defaultValue;
+  }
+}

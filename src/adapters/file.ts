@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { CacheAdapter } from "./base.js";
+import { BaseCacheAdapter } from "./base.js";
 import type { FileCacheOptions, CachePayload } from "../types.js";
 
 const DEFAULT_CACHE_DIR = path.join(tmpdir(), "node-cache");
@@ -21,7 +21,7 @@ const MAX_KEY_LENGTH = 200; // Safe limit for encoded filenames across filesyste
  * const value = cache.get('key'); // Retrieve value
  * ```
  */
-export class FileCache<V = unknown> implements CacheAdapter<V> {
+export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
   private readonly cacheDir: string;
 
   /**
@@ -36,6 +36,7 @@ export class FileCache<V = unknown> implements CacheAdapter<V> {
    * ```
    */
   constructor(options: FileCacheOptions = {}) {
+    super();
     const cachePath = options.cachePath ?? DEFAULT_CACHE_DIR;
 
     // Resolve to absolute path and normalize (prevents path traversal)
@@ -637,75 +638,4 @@ export class FileCache<V = unknown> implements CacheAdapter<V> {
     return this.increment(key, -amount);
   }
 
-  /**
-   * Retrieves multiple cached values by their keys.
-   *
-   * @param keys - Array of cache keys to retrieve
-   * @returns Object mapping keys to their values (undefined for missing/expired keys)
-   *
-   * @example
-   * ```ts
-   * const result = cache.getMany(['user:1', 'user:2', 'user:3']);
-   * // { 'user:1': data1, 'user:2': undefined, 'user:3': data3 }
-   * ```
-   */
-  getMany(keys: string[]): Record<string, V | undefined> {
-    const result: Record<string, V | undefined> = {};
-    for (const key of keys) {
-      result[key] = this.get(key);
-    }
-    return result;
-  }
-
-  /**
-   * Stores multiple key-value pairs in the cache with an optional TTL.
-   *
-   * @param items - Object containing key-value pairs to store
-   * @param seconds - Optional TTL in seconds (omit for no expiration)
-   *
-   * @example
-   * ```ts
-   * cache.putMany({ 'key1': 'val1', 'key2': 'val2' }, 60);
-   * ```
-   */
-  putMany(items: Record<string, V>, seconds?: number): void {
-    for (const [key, value] of Object.entries(items)) {
-      this.put(key, value, seconds);
-    }
-  }
-
-  /**
-   * Removes multiple items from the cache.
-   *
-   * @param keys - Array of cache keys to remove
-   * @returns The number of items that were actually removed
-   *
-   * @example
-   * ```ts
-   * const removed = cache.forgetMany(['key1', 'key2', 'key3']); // Returns 2 if only 2 existed
-   * ```
-   */
-  forgetMany(keys: string[]): number {
-    let removed = 0;
-    for (const key of keys) {
-      if (this.forget(key)) {
-        removed++;
-      }
-    }
-    return removed;
-  }
-
-  /*****************************************************************************
-   * Resolve default value; invoke factory when provided.
-   ****************************************************************************/
-  private resolveDefault(defaultValue?: V | (() => V)): V | undefined {
-    if (typeof defaultValue === "function") {
-      try {
-        return (defaultValue as () => V)();
-      } catch {
-        return undefined;
-      }
-    }
-    return defaultValue;
-  }
 }
