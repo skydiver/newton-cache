@@ -1,5 +1,5 @@
 /**
- * @skydiver/node-cache - Lightweight cache library with pluggable adapters
+ * flex-cache - Lightweight cache library with pluggable adapters
  *
  * Zero dependencies, TTL support, TypeScript-first.
  * All adapters implement the CacheAdapter interface for consistent API.

@@ -1,11 +1,11 @@
-# @skydiver/node-cache
+# flex-cache
 
 Lightweight cache library with pluggable adapters. Zero dependencies, TTL support, TypeScript-first. Ships as an ES module with complete type definitions.
 
 ## Install
 
 ```bash
-npm install @skydiver/node-cache
+npm install flex-cache
 ```
 
 ## Usage
@@ -21,7 +21,7 @@ All adapters implement the same `CacheAdapter` interface. Currently available:
 
 **FileCache** (persistent, survives restarts):
 ```ts
-import { FileCache } from '@skydiver/node-cache';
+import { FileCache } from 'flex-cache';
 
 // Stores files in the OS tmp directory by default
 const cache = new FileCache<string>();
@@ -32,7 +32,7 @@ const cache = new FileCache({ cachePath: "/var/tmp/my-cache" });
 
 **MemoryCache** (fast, in-memory only):
 ```ts
-import { MemoryCache } from '@skydiver/node-cache';
+import { MemoryCache } from 'flex-cache';
 
 // Stores data in memory
 const cache = new MemoryCache<string>();
