@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { BaseCacheAdapter } from "./base.js";
 import type { CachePayload, FlatFileCacheOptions } from "../types.js";
 
-const DEFAULT_CACHE_FILE = path.join(tmpdir(), "flex-cache.json");
+const DEFAULT_CACHE_FILE = path.join(tmpdir(), "newton-cache.json");
 
 /**
  * Flat-file cache that stores all entries in a single JSON file.
@@ -32,7 +32,7 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
    * Creates a new FlatFileCache instance.
    *
    * @param options - Configuration options
-   * @param options.filePath - Custom cache file path (defaults to `<os tmp>/flex-cache.json`)
+   * @param options.filePath - Custom cache file path (defaults to `<os tmp>/newton-cache.json`)
    *
    * @example
    * ```ts

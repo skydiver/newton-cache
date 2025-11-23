@@ -25,7 +25,7 @@ const readPayload = (filePath: string): RawPayload =>
 
 describe("FlatFileCache", () => {
   it("uses default file path when none provided", () => {
-    const defaultPath = path.join(tmpdir(), "flex-cache.json");
+    const defaultPath = path.join(tmpdir(), "newton-cache.json");
     fs.rmSync(defaultPath, { force: true });
 
     const cache = new FlatFileCache();

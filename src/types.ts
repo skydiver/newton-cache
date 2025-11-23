@@ -17,7 +17,7 @@ export interface FileCacheOptions extends CacheOptions {
  * Configuration options for FlatFileCache adapter
  */
 export interface FlatFileCacheOptions extends CacheOptions {
-  /** Path to the flat cache file. Defaults to `<os tmp>/flex-cache.json`. */
+  /** Path to the flat cache file. Defaults to `<os tmp>/newton-cache.json`. */
   filePath?: string;
 }
 

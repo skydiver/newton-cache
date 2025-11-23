@@ -1,11 +1,11 @@
-# flex-cache
+# newton-cache
 
 Lightweight cache library with pluggable adapters. Zero dependencies, TTL support, TypeScript-first. Ships as an ES module with complete type definitions.
 
 ## Install
 
 ```bash
-npm install flex-cache
+npm install newton-cache
 ```
 
 ## Usage
@@ -40,7 +40,7 @@ All adapters implement the same `CacheAdapter` interface. Currently available:
 
 **FileCache** (persistent, survives restarts):
 ```ts
-import { FileCache } from 'flex-cache';
+import { FileCache } from 'newton-cache';
 
 // Stores files in the OS tmp directory by default
 const cache = new FileCache<string>();
@@ -51,7 +51,7 @@ const cache = new FileCache({ cachePath: "/var/tmp/my-cache" });
 
 **FlatFileCache** (single file, survives restarts):
 ```ts
-import { FlatFileCache } from 'flex-cache';
+import { FlatFileCache } from 'newton-cache';
 
 // Stores all entries in a single JSON file in the OS tmp directory
 const cache = new FlatFileCache<string>();
@@ -64,7 +64,7 @@ const cache = new FlatFileCache({
 
 **MemoryCache** (fast, in-memory only):
 ```ts
-import { MemoryCache } from 'flex-cache';
+import { MemoryCache } from 'newton-cache';
 
 // Stores data in memory
 const cache = new MemoryCache<string>();
@@ -401,7 +401,7 @@ cache.increment('counter');
 - Writes use atomic temp file + rename for data safety
 
 ### FlatFileCache
-- All entries stored in a single JSON file (`<os tmp>/flex-cache.json` by default)
+- All entries stored in a single JSON file (`<os tmp>/newton-cache.json` by default)
 - File format: `{ "key1": { "value": <data>, "expiresAt": <timestamp> }, "key2": {...} }`
 - Lazy loading: cache loaded into memory on first access
 - **Every write operation (put, increment, forget) rewrites the entire file**

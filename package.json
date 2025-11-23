@@ -1,5 +1,5 @@
 {
-  "name": "flex-cache",
+  "name": "newton-cache",
   "version": "1.2.0",
   "description": "Lightweight cache library with pluggable adapters. Zero dependencies, TTL support, TypeScript-first.",
   "keywords": [
@@ -17,13 +17,13 @@
     "temporary",
     "zero-dependencies"
   ],
-  "homepage": "https://github.com/skydiver/flex-cache#readme",
+  "homepage": "https://github.com/skydiver/newton-cache#readme",
   "bugs": {
-    "url": "https://github.com/skydiver/flex-cache/issues"
+    "url": "https://github.com/skydiver/newton-cache/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/skydiver/flex-cache.git"
+    "url": "git+https://github.com/skydiver/newton-cache.git"
   },
   "license": "MIT",
   "author": {
