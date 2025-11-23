@@ -36,6 +36,12 @@ describe("MemoryCache", () => {
     assert.equal(cache.get("answer"), 42);
   });
 
+  it("returns undefined when stored value is null", () => {
+    const cache = new MemoryCache();
+    cache.put("nullish", null as unknown as string);
+    assert.equal(cache.get("nullish"), undefined);
+  });
+
   it("remembers value when missing and caches it", () => {
     const cache = new MemoryCache();
     const value = cache.remember("remember", 60, () => ({ payload: 123 }));
@@ -157,6 +163,24 @@ describe("MemoryCache", () => {
     assert.equal(cache.pull("missing2", () => "from-factory"), "from-factory");
   });
 
+  it("pull returns undefined when stored value is null", () => {
+    const cache = new MemoryCache();
+    cache.put("nullish", null as unknown as string);
+    assert.equal(cache.pull("nullish"), undefined);
+    assert.equal(cache.has("nullish"), false);
+  });
+
+  it("pull removes expired entries and returns default", () => {
+    const cache = new MemoryCache();
+    cache.put("expired", "old", 0.001);
+
+    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+    return delay(10).then(() => {
+      assert.equal(cache.pull("expired", "default"), "default");
+      assert.equal(cache.has("expired"), false);
+    });
+  });
+
   it("resolveDefault returns undefined when factory throws", () => {
     const cache = new MemoryCache();
     const value = cache.get("missing", () => {
@@ -183,6 +207,18 @@ describe("MemoryCache", () => {
     assert.deepEqual(cache.keys(), []);
   });
 
+  it("keys removes expired entries during enumeration", () => {
+    const cache = new MemoryCache();
+    cache.put("stale", "data", 0.001);
+
+    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+    return delay(10).then(() => {
+      const keys = cache.keys();
+      assert.deepEqual(keys, []);
+      assert.equal(cache.has("stale"), false);
+    });
+  });
+
   it("count returns number of cached items", () => {
     const cache = new MemoryCache();
     assert.equal(cache.count(), 0);
@@ -204,6 +240,17 @@ describe("MemoryCache", () => {
     cache.put("key2", "value2");
     const sizeAfterTwo = cache.size();
     assert.ok(sizeAfterTwo > sizeAfterOne);
+  });
+
+  it("size skips entries that cannot be serialized", () => {
+    const cache = new MemoryCache();
+    const cyclic: { self?: unknown } = {};
+    cyclic.self = cyclic;
+    cache.put("cyclic", cyclic);
+    cache.put("normal", { value: 1 });
+
+    const size = cache.size(); // Should skip cyclic entry without throwing
+    assert.ok(size > 0);
   });
 
   // Cleanup
@@ -249,6 +296,17 @@ describe("MemoryCache", () => {
     assert.equal(cache.ttl("permanent"), null);
   });
 
+  it("ttl returns null and removes expired entries", () => {
+    const cache = new MemoryCache();
+    cache.put("expired", "old", 0.001);
+
+    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+    return delay(10).then(() => {
+      assert.equal(cache.ttl("expired"), null);
+      assert.equal(cache.has("expired"), false);
+    });
+  });
+
   it("touch extends TTL of existing entry", () => {
     const cache = new MemoryCache();
     cache.put("session", "data", 10);
@@ -262,6 +320,17 @@ describe("MemoryCache", () => {
   it("touch returns false for non-existent keys", () => {
     const cache = new MemoryCache();
     assert.equal(cache.touch("missing", 60), false);
+  });
+
+  it("touch returns false for expired entries", () => {
+    const cache = new MemoryCache();
+    cache.put("expired", "old", 0.001);
+
+    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+    return delay(10).then(() => {
+      assert.equal(cache.touch("expired", 60), false);
+      assert.equal(cache.has("expired"), false);
+    });
   });
 
   it("touch can remove TTL by passing Infinity", () => {

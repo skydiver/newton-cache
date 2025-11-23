@@ -82,6 +82,16 @@ describe("FileCache", () => {
     cleanup();
   });
 
+  it("get returns undefined when stored value is null", () => {
+    const { cache, cleanup, dir } = setupCache();
+    const key = "nullish-value";
+    const filename = path.join(dir, encodeURIComponent(key));
+    fs.writeFileSync(filename, JSON.stringify({ value: null }), "utf8");
+
+    assert.equal(cache.get(key), undefined);
+    cleanup();
+  });
+
   it("get handles unreadable directory and returns default", () => {
     const { cache, cleanup, dir } = setupCache();
     const key = "dir-key";
@@ -350,6 +360,17 @@ describe("FileCache", () => {
     cleanup();
   });
 
+  it("pull returns undefined when stored value is null", () => {
+    const { cache, cleanup, dir } = setupCache();
+    const key = "nullish-pull";
+    const filename = path.join(dir, encodeURIComponent(key));
+    fs.writeFileSync(filename, JSON.stringify({ value: null }), "utf8");
+
+    assert.equal(cache.pull(key), undefined);
+    assert.equal(fs.existsSync(filename), false);
+    cleanup();
+  });
+
   it("pull removes null payload and returns default", () => {
     const { cache, cleanup, dir } = setupCache();
     const key = "pull-null";
@@ -466,6 +487,17 @@ describe("FileCache", () => {
     cleanup();
   });
 
+  it("keys decodes filenames when key is not stored in payload", () => {
+    const { cache, cleanup, dir } = setupCache();
+    const key = "user:1/profile";
+    const filename = path.join(dir, encodeURIComponent(key));
+    fs.writeFileSync(filename, JSON.stringify({ value: "data" }), "utf8");
+
+    const keys = cache.keys();
+    assert.deepEqual(keys, [key]);
+    cleanup();
+  });
+
   it("count returns number of cached items", () => {
     const { cache, cleanup } = setupCache();
     assert.equal(cache.count(), 0);
@@ -516,6 +548,27 @@ describe("FileCache", () => {
     cleanup();
   });
 
+  it("size skips entries that cannot be stat'd and still returns total", () => {
+    const { cache, cleanup, dir } = setupCache();
+    cache.put("valid", "data");
+
+    const broken = path.join(dir, "broken-link");
+    fs.symlinkSync("non-existent-target", broken);
+
+    const size = cache.size();
+    assert.ok(size >= fs.statSync(path.join(dir, encodeURIComponent("valid"))).size);
+    cleanup();
+  });
+
+  it("size returns zero when cache directory is missing", () => {
+    const { cache, cleanup, dir } = setupCache();
+    cache.flush();
+    fs.rmSync(dir, { recursive: true, force: true });
+
+    assert.equal(cache.size(), 0);
+    cleanup();
+  });
+
   // Phase 3: Cleanup
   it("prune removes only expired entries", () => {
     const { cache, cleanup, dir } = setupCache();
@@ -557,6 +610,20 @@ describe("FileCache", () => {
     cleanup();
   });
 
+  it("prune removes entries missing value field", () => {
+    const { cache, cleanup, dir } = setupCache();
+    cache.put("valid", "data");
+
+    const missingValue = path.join(dir, "missing-value");
+    fs.writeFileSync(missingValue, JSON.stringify({ expiresAt: Date.now() + 1000 }), "utf8");
+
+    const removed = cache.prune();
+    assert.equal(removed, 1);
+    assert.equal(fs.existsSync(missingValue), false);
+    assert.equal(cache.count(), 1);
+    cleanup();
+  });
+
   it("prune returns zero when cache is empty", () => {
     const { cache, cleanup } = setupCache();
     assert.equal(cache.prune(), 0);
@@ -584,6 +651,16 @@ describe("FileCache", () => {
     const { cache, cleanup } = setupCache();
     cache.put("permanent", "data");
     assert.equal(cache.ttl("permanent"), null);
+    cleanup();
+  });
+
+  it("ttl returns null when payload is missing value", () => {
+    const { cache, cleanup, dir } = setupCache();
+    const key = "no-value";
+    const filename = path.join(dir, encodeURIComponent(key));
+    fs.writeFileSync(filename, JSON.stringify({ expiresAt: Date.now() + 1000 }), "utf8");
+
+    assert.equal(cache.ttl(key), null);
     cleanup();
   });
 
@@ -618,6 +695,16 @@ describe("FileCache", () => {
   it("touch returns false for non-existent keys", () => {
     const { cache, cleanup } = setupCache();
     assert.equal(cache.touch("missing", 60), false);
+    cleanup();
+  });
+
+  it("touch returns false when payload is missing value", () => {
+    const { cache, cleanup, dir } = setupCache();
+    const key = "no-value";
+    const filename = path.join(dir, encodeURIComponent(key));
+    fs.writeFileSync(filename, JSON.stringify({ expiresAt: Date.now() + 1000 }), "utf8");
+
+    assert.equal(cache.touch(key, 60), false);
     cleanup();
   });
 
