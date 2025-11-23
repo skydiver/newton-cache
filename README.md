@@ -1,6 +1,6 @@
 # @skydiver/node-cache
 
-Lightweight, dependency-free cache library with pluggable adapters. File-based storage with TTL support. Ships as an ES module with TypeScript typings.
+Lightweight cache library with pluggable adapters. Zero dependencies, TTL support, TypeScript-first. Ships as an ES module with complete type definitions.
 
 ## Install
 
@@ -10,17 +10,35 @@ npm install @skydiver/node-cache
 
 ## Usage
 
+### Choosing an Adapter
+
+All adapters implement the same `CacheAdapter` interface. Currently available:
+
+- **FileCache** - Persistent file-based storage (survives restarts)
+- **MemoryCache** - Fast in-memory storage (data lost on restart)
+
 ### Initializing
 
+**FileCache** (persistent, survives restarts):
 ```ts
 import { FileCache } from '@skydiver/node-cache';
 
-// Stores files in the OS tmp directory by default.
+// Stores files in the OS tmp directory by default
 const cache = new FileCache<string>();
 
 // Or provide your own directory:
-// const cache = new FileCache({ cachePath: "/var/tmp/my-cache" });
+const cache = new FileCache({ cachePath: "/var/tmp/my-cache" });
 ```
+
+**MemoryCache** (fast, in-memory only):
+```ts
+import { MemoryCache } from '@skydiver/node-cache';
+
+// Stores data in memory
+const cache = new MemoryCache<string>();
+```
+
+Both adapters implement the same interface, so you can easily switch between them.
 
 ### Getting items from the cache
 

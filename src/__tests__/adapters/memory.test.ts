@@ -1,0 +1,366 @@
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
+import { MemoryCache } from "../../index.js";
+
+describe("MemoryCache", () => {
+  it("returns default undefined when key is missing", () => {
+    const cache = new MemoryCache();
+    assert.equal(cache.get("missing"), undefined);
+  });
+
+  it("returns provided default value when key is missing", () => {
+    const cache = new MemoryCache();
+    assert.equal(cache.get("missing", "default"), "default");
+  });
+
+  it("invokes default factory when key is missing", () => {
+    const cache = new MemoryCache();
+    const value = cache.get("missing", () => "from-factory");
+    assert.equal(value, "from-factory");
+  });
+
+  it("has returns true when key exists with non-undefined value", () => {
+    const cache = new MemoryCache();
+    cache.put("exists", 1);
+    assert.equal(cache.has("exists"), true);
+  });
+
+  it("has returns false when key is missing", () => {
+    const cache = new MemoryCache();
+    assert.equal(cache.has("missing"), false);
+  });
+
+  it("stores and retrieves values from memory", () => {
+    const cache = new MemoryCache();
+    cache.put("answer", 42);
+    assert.equal(cache.get("answer"), 42);
+  });
+
+  it("remembers value when missing and caches it", () => {
+    const cache = new MemoryCache();
+    const value = cache.remember("remember", 60, () => ({ payload: 123 }));
+    assert.deepEqual(value, { payload: 123 });
+    assert.deepEqual(cache.get("remember"), { payload: 123 });
+  });
+
+  it("remembers returns existing non-expired value", () => {
+    const cache = new MemoryCache();
+    cache.put("existing", "kept", 10000);
+    const value = cache.remember("existing", 60, () => "new");
+    assert.equal(value, "kept");
+  });
+
+  it("remember overwrites expired entry", () => {
+    const cache = new MemoryCache();
+    cache.put("existing-expired", "old", 0.001); // Expires almost immediately
+
+    // Wait for expiration
+    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+    return delay(10).then(() => {
+      const value = cache.remember("existing-expired", 60, () => "fresh");
+      assert.equal(value, "fresh");
+      assert.equal(cache.get("existing-expired"), "fresh");
+    });
+  });
+
+  it("remember with non-finite TTL stores without expiresAt", () => {
+    const cache = new MemoryCache();
+    const value = cache.remember("remember-nonfinite", Number.POSITIVE_INFINITY, () => "forever");
+    assert.equal(value, "forever");
+    assert.equal(cache.ttl("remember-nonfinite"), null);
+  });
+
+  it("rememberForever stores without expiry", () => {
+    const cache = new MemoryCache();
+    const value = cache.rememberForever("forever", () => "persistent");
+    assert.equal(value, "persistent");
+    assert.equal(cache.ttl("forever"), null);
+  });
+
+  it("put stores with TTL", () => {
+    const cache = new MemoryCache();
+    cache.put("ttl", "value", 10);
+    const ttl = cache.ttl("ttl");
+    assert.ok(ttl !== null && ttl <= 10);
+  });
+
+  it("put stores forever when TTL omitted", () => {
+    const cache = new MemoryCache();
+    cache.put("forever-put", "value");
+    assert.equal(cache.get("forever-put"), "value");
+    assert.equal(cache.ttl("forever-put"), null);
+  });
+
+  it("put with NaN TTL stores without expiresAt", () => {
+    const cache = new MemoryCache();
+    cache.put("nan-put", "value", Number.NaN);
+    assert.equal(cache.get("nan-put"), "value");
+    assert.equal(cache.ttl("nan-put"), null);
+  });
+
+  it("forever stores without expiry", () => {
+    const cache = new MemoryCache();
+    cache.forever("forever-method", "value");
+    assert.equal(cache.get("forever-method"), "value");
+    assert.equal(cache.ttl("forever-method"), null);
+  });
+
+  it("forget removes an item and returns true when it existed", () => {
+    const cache = new MemoryCache();
+    cache.put("forget-me", 1);
+    assert.equal(cache.forget("forget-me"), true);
+    assert.equal(cache.has("forget-me"), false);
+    assert.equal(cache.forget("forget-me"), false);
+  });
+
+  it("forget returns false when key missing", () => {
+    const cache = new MemoryCache();
+    assert.equal(cache.forget("absent"), false);
+  });
+
+  it("flush clears all entries", () => {
+    const cache = new MemoryCache();
+    cache.put("a", 1);
+    cache.put("b", 2);
+    cache.flush();
+    assert.equal(cache.count(), 0);
+  });
+
+  it("add stores only when missing", () => {
+    const cache = new MemoryCache();
+    const first = cache.add("add-key", "one", 10);
+    const second = cache.add("add-key", "two", 10);
+    assert.equal(first, true);
+    assert.equal(second, false);
+    assert.equal(cache.get("add-key"), "one");
+  });
+
+  it("add respects existing non-expired value", () => {
+    const cache = new MemoryCache();
+    cache.put("add-existing", "kept", 1000);
+    const stored = cache.add("add-existing", "new", 10);
+    assert.equal(stored, false);
+    assert.equal(cache.get("add-existing"), "kept");
+  });
+
+  it("pull returns value and deletes the entry", () => {
+    const cache = new MemoryCache();
+    cache.put("pull-me", 99);
+    const value = cache.pull("pull-me");
+    assert.equal(value, 99);
+    assert.equal(cache.has("pull-me"), false);
+  });
+
+  it("pull returns default when missing or expired", () => {
+    const cache = new MemoryCache();
+    assert.equal(cache.pull("missing", "default"), "default");
+    assert.equal(cache.pull("missing2", () => "from-factory"), "from-factory");
+  });
+
+  it("resolveDefault returns undefined when factory throws", () => {
+    const cache = new MemoryCache();
+    const value = cache.get("missing", () => {
+      throw new Error("boom");
+    });
+    assert.equal(value, undefined);
+  });
+
+  // Introspection methods
+  it("keys returns all non-expired cache keys", () => {
+    const cache = new MemoryCache();
+    cache.put("key1", "value1");
+    cache.put("key2", "value2");
+    cache.put("key3", "value3");
+    const keys = cache.keys();
+    assert.equal(keys.length, 3);
+    assert.ok(keys.includes("key1"));
+    assert.ok(keys.includes("key2"));
+    assert.ok(keys.includes("key3"));
+  });
+
+  it("keys returns empty array when cache is empty", () => {
+    const cache = new MemoryCache();
+    assert.deepEqual(cache.keys(), []);
+  });
+
+  it("count returns number of cached items", () => {
+    const cache = new MemoryCache();
+    assert.equal(cache.count(), 0);
+    cache.put("a", 1);
+    assert.equal(cache.count(), 1);
+    cache.put("b", 2);
+    cache.put("c", 3);
+    assert.equal(cache.count(), 3);
+    cache.forget("b");
+    assert.equal(cache.count(), 2);
+  });
+
+  it("size returns approximate cache size in bytes", () => {
+    const cache = new MemoryCache();
+    assert.equal(cache.size(), 0);
+    cache.put("key", "value");
+    const sizeAfterOne = cache.size();
+    assert.ok(sizeAfterOne > 0);
+    cache.put("key2", "value2");
+    const sizeAfterTwo = cache.size();
+    assert.ok(sizeAfterTwo > sizeAfterOne);
+  });
+
+  // Cleanup
+  it("prune removes only expired entries", () => {
+    const cache = new MemoryCache();
+    cache.put("valid1", "data1", 3600);
+    cache.put("valid2", "data2");
+    cache.put("expired", "old", 0.001);
+
+    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+    return delay(10).then(() => {
+      const removed = cache.prune();
+      assert.equal(removed, 1);
+      assert.equal(cache.count(), 2);
+      assert.ok(cache.has("valid1"));
+      assert.ok(cache.has("valid2"));
+      assert.ok(!cache.has("expired"));
+    });
+  });
+
+  it("prune returns zero when cache is empty", () => {
+    const cache = new MemoryCache();
+    assert.equal(cache.prune(), 0);
+  });
+
+  // TTL management
+  it("ttl returns remaining time in seconds", () => {
+    const cache = new MemoryCache();
+    cache.put("session", "data", 10);
+    const ttl = cache.ttl("session");
+    assert.ok(ttl !== null);
+    assert.ok(ttl! <= 10 && ttl! > 0);
+  });
+
+  it("ttl returns null for non-existent keys", () => {
+    const cache = new MemoryCache();
+    assert.equal(cache.ttl("missing"), null);
+  });
+
+  it("ttl returns null for keys without expiration", () => {
+    const cache = new MemoryCache();
+    cache.put("permanent", "data");
+    assert.equal(cache.ttl("permanent"), null);
+  });
+
+  it("touch extends TTL of existing entry", () => {
+    const cache = new MemoryCache();
+    cache.put("session", "data", 10);
+    const updated = cache.touch("session", 3600);
+    assert.equal(updated, true);
+    const ttl = cache.ttl("session");
+    assert.ok(ttl !== null);
+    assert.ok(ttl! > 10);
+  });
+
+  it("touch returns false for non-existent keys", () => {
+    const cache = new MemoryCache();
+    assert.equal(cache.touch("missing", 60), false);
+  });
+
+  it("touch can remove TTL by passing Infinity", () => {
+    const cache = new MemoryCache();
+    cache.put("session", "data", 60);
+    cache.touch("session", Number.POSITIVE_INFINITY);
+    assert.equal(cache.ttl("session"), null);
+    assert.ok(cache.has("session"));
+  });
+
+  // Atomic counters
+  it("increment creates and increments numeric values", () => {
+    const cache = new MemoryCache();
+    assert.equal(cache.increment("counter"), 1);
+    assert.equal(cache.increment("counter"), 2);
+    assert.equal(cache.increment("counter"), 3);
+    assert.equal(cache.increment("counter", 10), 13);
+  });
+
+  it("increment treats non-numeric values as zero", () => {
+    const cache = new MemoryCache<string | number>();
+    cache.put("text", "hello");
+    assert.equal(cache.increment("text"), 1);
+    assert.equal(cache.increment("text"), 2);
+  });
+
+  it("increment preserves TTL of existing entries", () => {
+    const cache = new MemoryCache();
+    cache.put("counter", 5, 3600);
+    cache.increment("counter");
+    const ttl = cache.ttl("counter");
+    assert.ok(ttl !== null && ttl! > 0);
+  });
+
+  it("decrement decreases numeric values", () => {
+    const cache = new MemoryCache();
+    cache.put("credits", 100);
+    assert.equal(cache.decrement("credits"), 99);
+    assert.equal(cache.decrement("credits", 10), 89);
+    assert.equal(cache.decrement("credits", 5), 84);
+  });
+
+  it("decrement creates negative values when key missing", () => {
+    const cache = new MemoryCache();
+    assert.equal(cache.decrement("missing"), -1);
+    assert.equal(cache.decrement("missing"), -2);
+  });
+
+  it("increment and decrement work together", () => {
+    const cache = new MemoryCache();
+    cache.put("balance", 50);
+    cache.increment("balance", 20);
+    cache.decrement("balance", 10);
+    cache.increment("balance", 5);
+    assert.equal(cache.get("balance"), 65);
+  });
+
+  // Type safety with generics
+  it("supports typed values", () => {
+    interface User {
+      id: number;
+      name: string;
+    }
+    const cache = new MemoryCache<User>();
+    cache.put("user:1", { id: 1, name: "Alice" });
+    const user = cache.get("user:1");
+    assert.deepEqual(user, { id: 1, name: "Alice" });
+  });
+
+  it("handles complex objects", () => {
+    const cache = new MemoryCache<Record<string, unknown>>();
+    const data = {
+      nested: { deep: { value: 42 } },
+      array: [1, 2, 3],
+      date: new Date().toISOString(),
+    };
+    cache.put("complex", data);
+    assert.deepEqual(cache.get("complex"), data);
+  });
+
+  it("get deletes expired entries automatically", () => {
+    const cache = new MemoryCache();
+    cache.put("expired", "old", 0.001);
+
+    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+    return delay(10).then(() => {
+      const value = cache.get("expired", "default");
+      assert.equal(value, "default");
+      assert.equal(cache.has("expired"), false);
+    });
+  });
+
+  it("has deletes expired entries automatically", () => {
+    const cache = new MemoryCache();
+    cache.put("expired", "old", 0.001);
+
+    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+    return delay(10).then(() => {
+      assert.equal(cache.has("expired"), false);
+    });
+  });
+});

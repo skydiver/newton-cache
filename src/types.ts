@@ -14,6 +14,13 @@ export interface FileCacheOptions extends CacheOptions {
 }
 
 /**
+ * Configuration options for MemoryCache adapter
+ */
+export interface MemoryCacheOptions extends CacheOptions {
+  // Reserved for future options (e.g., maxSize, evictionPolicy)
+}
+
+/**
  * Internal cache payload structure stored in cache files
  * @template V - The type of values stored in the cache
  */

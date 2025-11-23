@@ -1,16 +1,18 @@
 {
   "name": "@skydiver/node-cache",
-  "version": "0.1.0",
-  "description": "Lightweight, dependency-free cache library with pluggable adapters. File-based storage with TTL support.",
+  "version": "1.0.0",
+  "description": "Lightweight cache library with pluggable adapters. Zero dependencies, TTL support, TypeScript-first.",
   "keywords": [
     "cache",
     "file-cache",
+    "memory-cache",
     "filesystem",
     "storage",
     "ttl",
     "key-value",
     "adapter",
     "file-based",
+    "in-memory",
     "temporary",
     "zero-dependencies"
   ],
@@ -37,8 +39,8 @@
     "build": "tsc -p tsconfig.json",
     "clean": "rimraf dist",
     "prepublishOnly": "npm run clean && npm run build && npm test",
-    "test": "npm run build && node --test \"dist/__tests__/*.js\"",
-    "test:coverage": "npm run build && c8 -r text -r lcov node --test \"dist/__tests__/*.js\""
+    "test": "npm run build && node --test \"dist/__tests__/**/*.js\"",
+    "test:coverage": "npm run build && c8 -r text -r lcov node --test \"dist/__tests__/**/*.js\""
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.0",
