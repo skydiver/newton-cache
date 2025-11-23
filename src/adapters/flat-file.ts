@@ -10,7 +10,17 @@ const DEFAULT_CACHE_FILE = path.join(tmpdir(), "flex-cache.json");
  * Flat-file cache that stores all entries in a single JSON file.
  * Data is fully loaded into memory on first access and persisted on each write.
  *
+ * Best for small-to-medium caches (<1000 keys) where you want easy backup/restore
+ * or minimal inode usage. For large caches or high write frequency, use FileCache instead.
+ *
  * @template V - The type of values stored in the cache
+ *
+ * @example
+ * ```ts
+ * const cache = new FlatFileCache<string>();
+ * cache.put('key', 'value', 60); // Store for 60 seconds
+ * const value = cache.get('key'); // Retrieve value
+ * ```
  */
 export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
   private readonly filePath: string;
@@ -18,6 +28,17 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
   private loaded = false;
   private removedOnLoad = 0;
 
+  /**
+   * Creates a new FlatFileCache instance.
+   *
+   * @param options - Configuration options
+   * @param options.filePath - Custom cache file path (defaults to `<os tmp>/flex-cache.json`)
+   *
+   * @example
+   * ```ts
+   * const cache = new FlatFileCache({ filePath: '/var/cache/my-app.json' });
+   * ```
+   */
   constructor(options: FlatFileCacheOptions = {}) {
     super();
     const targetPath = options.filePath ?? DEFAULT_CACHE_FILE;
@@ -25,6 +46,20 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
     this.store = new Map();
   }
 
+  /**
+   * Retrieves a cached value by key.
+   *
+   * @param key - The cache key
+   * @param defaultValue - Optional default value or factory function to return if key is missing/expired
+   * @returns The cached value, default value, or undefined if not found
+   *
+   * @example
+   * ```ts
+   * const value = cache.get('user:123'); // Returns value or undefined
+   * const value = cache.get('user:123', 'default'); // Returns value or 'default'
+   * const value = cache.get('user:123', () => fetchUser()); // Returns value or calls factory
+   * ```
+   */
   get(key: string, defaultValue?: V | (() => V)): V | undefined {
     this.loadFromDisk();
     const entry = this.store.get(key);
@@ -39,6 +74,18 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
     return entry.value ?? undefined;
   }
 
+  /**
+   * Retrieves a cached value and immediately deletes it (one-time read).
+   *
+   * @param key - The cache key
+   * @param defaultValue - Optional default value or factory function to return if key is missing/expired
+   * @returns The cached value, default value, or undefined if not found
+   *
+   * @example
+   * ```ts
+   * const token = cache.pull('one-time-token'); // Read and delete
+   * ```
+   */
   pull(key: string, defaultValue?: V | (() => V)): V | undefined {
     this.loadFromDisk();
     const entry = this.store.get(key);
@@ -55,6 +102,21 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
     return entry.value ?? undefined;
   }
 
+  /**
+   * Stores a value in the cache with an optional TTL.
+   *
+   * Note: Every write rewrites the entire cache file. For high-frequency writes, consider FileCache.
+   *
+   * @param key - The cache key
+   * @param value - The value to store
+   * @param seconds - Optional TTL in seconds (omit for no expiration)
+   *
+   * @example
+   * ```ts
+   * cache.put('session:abc', userData, 3600); // Store for 1 hour
+   * cache.put('config', settings); // Store forever
+   * ```
+   */
   put(key: string, value: V, seconds?: number): void {
     this.loadFromDisk();
     const expiresAt =
@@ -63,10 +125,32 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
     this.saveToDisk();
   }
 
+  /**
+   * Stores a value permanently (alias for put without TTL).
+   *
+   * @param key - The cache key
+   * @param value - The value to store
+   *
+   * @example
+   * ```ts
+   * cache.forever('app-version', '1.0.0');
+   * ```
+   */
   forever(key: string, value: V): void {
     this.put(key, value);
   }
 
+  /**
+   * Removes an item from the cache.
+   *
+   * @param key - The cache key
+   * @returns True if the item existed and was removed, false otherwise
+   *
+   * @example
+   * ```ts
+   * const removed = cache.forget('session:abc'); // true if existed
+   * ```
+   */
   forget(key: string): boolean {
     this.loadFromDisk();
     const existed = this.store.delete(key);
@@ -74,6 +158,14 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
     return existed;
   }
 
+  /**
+   * Clears all cached entries and removes the cache file.
+   *
+   * @example
+   * ```ts
+   * cache.flush(); // All data deleted
+   * ```
+   */
   flush(): void {
     this.loaded = true;
     this.store.clear();
@@ -84,12 +176,38 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
     }
   }
 
+  /**
+   * Stores a value only if the key doesn't already exist.
+   *
+   * @param key - The cache key
+   * @param value - The value to store
+   * @param seconds - Optional TTL in seconds
+   * @returns True if the value was stored, false if key already exists
+   *
+   * @example
+   * ```ts
+   * const stored = cache.add('lock:resource', true, 60); // Returns true if lock acquired
+   * ```
+   */
   add(key: string, value: V, seconds?: number): boolean {
     if (this.has(key)) return false;
     this.put(key, value, seconds);
     return true;
   }
 
+  /**
+   * Retrieves a value or stores the result of a factory function if missing/expired.
+   *
+   * @param key - The cache key
+   * @param seconds - TTL in seconds (use Infinity for no expiration)
+   * @param factory - Function to generate the value if not cached
+   * @returns The cached or newly generated value
+   *
+   * @example
+   * ```ts
+   * const users = cache.remember('users', 60, () => fetchUsers());
+   * ```
+   */
   remember(key: string, seconds: number, factory: () => V): V {
     if (this.has(key)) {
       const existing = this.get(key);
@@ -101,10 +219,35 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
     return value;
   }
 
+  /**
+   * Retrieves a value or stores the result of a factory function permanently.
+   *
+   * @param key - The cache key
+   * @param factory - Function to generate the value if not cached
+   * @returns The cached or newly generated value
+   *
+   * @example
+   * ```ts
+   * const config = cache.rememberForever('config', () => loadConfig());
+   * ```
+   */
   rememberForever(key: string, factory: () => V): V {
     return this.remember(key, Number.POSITIVE_INFINITY, factory);
   }
 
+  /**
+   * Checks if a key exists in the cache and has not expired.
+   *
+   * @param key - The cache key
+   * @returns True if the key exists with a defined, non-expired value
+   *
+   * @example
+   * ```ts
+   * if (cache.has('user:123')) {
+   *   // User data is cached
+   * }
+   * ```
+   */
   has(key: string): boolean {
     this.loadFromDisk();
     const entry = this.store.get(key);
@@ -119,6 +262,16 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
     return entry.value !== undefined;
   }
 
+  /**
+   * Returns all non-expired cache keys.
+   *
+   * @returns Array of all valid cache keys
+   *
+   * @example
+   * ```ts
+   * const allKeys = cache.keys(); // ['user:1', 'user:2', 'session:abc']
+   * ```
+   */
   keys(): string[] {
     this.loadFromDisk();
     const keys: string[] = [];
@@ -136,10 +289,31 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
     return keys;
   }
 
+  /**
+   * Returns the number of non-expired cache entries.
+   *
+   * @returns The count of valid cache entries
+   *
+   * @example
+   * ```ts
+   * console.log(`Cache has ${cache.count()} entries`);
+   * ```
+   */
   count(): number {
     return this.keys().length;
   }
 
+  /**
+   * Returns the total size of the cache file in bytes.
+   *
+   * @returns Total size in bytes
+   *
+   * @example
+   * ```ts
+   * const bytes = cache.size();
+   * console.log(`Cache size: ${(bytes / 1024).toFixed(2)} KB`);
+   * ```
+   */
   size(): number {
     this.loadFromDisk();
     try {
@@ -150,6 +324,17 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
     }
   }
 
+  /**
+   * Removes all expired cache entries.
+   *
+   * @returns The number of expired entries removed
+   *
+   * @example
+   * ```ts
+   * const removed = cache.prune();
+   * console.log(`Removed ${removed} expired entries`);
+   * ```
+   */
   prune(): number {
     this.loadFromDisk();
     let removed = this.removedOnLoad;
@@ -165,6 +350,17 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
     return removed;
   }
 
+  /**
+   * Gets the remaining time-to-live (TTL) for a cache key in seconds.
+   *
+   * @param key - The cache key
+   * @returns The remaining TTL in seconds, or null if the key doesn't exist or has no expiration
+   *
+   * @example
+   * ```ts
+   * const remaining = cache.ttl('session:abc'); // e.g., 3599
+   * ```
+   */
   ttl(key: string): number | null {
     this.loadFromDisk();
     const entry = this.store.get(key);
@@ -182,6 +378,18 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
     return Math.ceil(remaining / 1000);
   }
 
+  /**
+   * Updates the TTL of an existing cache entry.
+   *
+   * @param key - The cache key
+   * @param seconds - New TTL in seconds from now
+   * @returns True if the TTL was updated, false if the key doesn't exist
+   *
+   * @example
+   * ```ts
+   * cache.touch('session:abc', 3600); // Extend for another hour
+   * ```
+   */
   touch(key: string, seconds: number): boolean {
     this.loadFromDisk();
     const entry = this.store.get(key);
@@ -200,6 +408,22 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
     return true;
   }
 
+  /**
+   * Increments a numeric cache value atomically.
+   *
+   * Non-numeric values are treated as 0. Preserves existing TTL.
+   *
+   * @param key - The cache key
+   * @param amount - The amount to increment by (default: 1)
+   * @returns The new value after incrementing
+   *
+   * @example
+   * ```ts
+   * cache.increment('page-views'); // Returns 1
+   * cache.increment('page-views'); // Returns 2
+   * cache.increment('score', 10); // Increment by 10
+   * ```
+   */
   increment(key: string, amount = 1): number {
     this.loadFromDisk();
     const entry = this.store.get(key);
@@ -219,10 +443,30 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
     return newValue;
   }
 
+  /**
+   * Decrements a numeric cache value atomically.
+   *
+   * Non-numeric values are treated as 0. Preserves existing TTL.
+   *
+   * @param key - The cache key
+   * @param amount - The amount to decrement by (default: 1)
+   * @returns The new value after decrementing
+   *
+   * @example
+   * ```ts
+   * cache.decrement('credits'); // Returns -1
+   * cache.put('balance', 100);
+   * cache.decrement('balance', 20); // Returns 80
+   * ```
+   */
   decrement(key: string, amount = 1): number {
     return this.increment(key, -amount);
   }
 
+  /**
+   * Loads the cache file from disk into memory (lazy loading).
+   * Only loads once per instance. Removes expired entries during load.
+   */
   private loadFromDisk(): void {
     if (this.loaded) return;
     this.loaded = true;
@@ -277,10 +521,17 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
     }
   }
 
+  /**
+   * Checks if a cache entry has expired.
+   */
   private isExpired(entry: CachePayload<V>): boolean {
     return entry.expiresAt != null && entry.expiresAt <= Date.now();
   }
 
+  /**
+   * Persists the entire cache to disk atomically using temp file + rename.
+   * Writes are silent-fail (errors ignored) to avoid throwing during cache operations.
+   */
   private saveToDisk(): void {
     try {
       const dir = path.dirname(this.filePath);
