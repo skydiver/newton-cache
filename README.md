@@ -18,6 +18,24 @@ All adapters implement the same `CacheAdapter` interface. Currently available:
 - **FlatFileCache** - Persistent single-file storage (all keys in one JSON file)
 - **MemoryCache** - Fast in-memory storage (data lost on restart)
 
+#### FileCache vs FlatFileCache Comparison
+
+| Feature | FileCache | FlatFileCache |
+|---------|-----------|---------------|
+| **Storage** | One file per key | Single JSON file |
+| **Best for** | Large caches (>1000 keys) | Small-medium caches (<1000 keys) |
+| **Write performance** | Fast (only affected key) | Slower (rewrites entire cache) |
+| **Read performance** | O(1) file read | O(1) after initial load |
+| **Memory usage** | Minimal | Full cache loaded in memory |
+| **Backup/restore** | Copy directory | Copy single file ✨ |
+| **Inode usage** | One per key | Just one file ✨ |
+| **Inspection** | `ls` cache directory | Read JSON file directly ✨ |
+| **Persistence** | Survives restarts ✅ | Survives restarts ✅ |
+
+**Use FileCache when:** You have many keys (>1000), high write frequency, or large values per key.
+
+**Use FlatFileCache when:** You want easy backup (single file), minimal inode usage, or simple inspection of all cached data.
+
 ### Initializing
 
 **FileCache** (persistent, survives restarts):
@@ -44,8 +62,6 @@ const cache = new FlatFileCache({
 });
 ```
 
-Use FlatFileCache when you want a small-to-medium cache that is easy to copy/backup (one file), or when inode usage matters. For large caches or very high write rates, prefer FileCache.
-
 **MemoryCache** (fast, in-memory only):
 ```ts
 import { MemoryCache } from 'flex-cache';
@@ -54,7 +70,7 @@ import { MemoryCache } from 'flex-cache';
 const cache = new MemoryCache<string>();
 ```
 
-Both adapters implement the same interface, so you can easily switch between them.
+All adapters implement the same interface, so you can easily switch between them.
 
 ### Getting items from the cache
 
@@ -376,15 +392,33 @@ cache.increment('counter');
 
 ## How it works
 
-- Files are stored under a cache directory (`<os tmp>/node-cache` by default).
-- Keys are URL-encoded to form the filename (e.g., key `answer` -> `/tmp/node-cache/answer`).
-- Very long keys (>200 chars) are SHA-256 hashed to prevent filesystem limits.
-- Each file stores a JSON payload: `{ "value": <your data>, "expiresAt": <timestamp|undefined>, "key": "<original key>" }`.
-- `get` reads and JSON-parses the file for the given key, returning `undefined` or a caller-provided default when missing, invalid, or expired (expired files are deleted).
-- `has` returns true only when the file exists, parses, is not expired, and the stored `value` is defined.
-- `remember` writes the payload with an `expiresAt` timestamp when given a TTL (seconds). `rememberForever` omits `expiresAt`.
-- `prune()` removes only expired entries, while `flush()` removes everything.
-- Counters (`increment`/`decrement`) are atomic within a single process and preserve existing TTL.
+### FileCache
+- Files are stored under a cache directory (`<os tmp>/node-cache` by default)
+- Keys are URL-encoded to form the filename (e.g., key `answer` → `/tmp/node-cache/answer`)
+- Very long keys (>200 chars) are SHA-256 hashed to prevent filesystem limits
+- Each file stores a JSON payload: `{ "value": <data>, "expiresAt": <timestamp|undefined>, "key": "<original>" }`
+- `get` reads and JSON-parses the file, deleting expired entries automatically
+- Writes use atomic temp file + rename for data safety
+
+### FlatFileCache
+- All entries stored in a single JSON file (`<os tmp>/flex-cache.json` by default)
+- File format: `{ "key1": { "value": <data>, "expiresAt": <timestamp> }, "key2": {...} }`
+- Lazy loading: cache loaded into memory on first access
+- **Every write operation (put, increment, forget) rewrites the entire file**
+- Expired entries auto-pruned during load and on access
+- Writes use atomic temp file + rename for data safety
+
+### MemoryCache
+- Data stored in JavaScript `Map` (in-memory only, lost on restart)
+- No filesystem I/O, fastest performance
+- Expired entries removed lazily on access or during `prune()`
+
+### All Adapters
+- `get` returns `undefined` or caller-provided default when missing/invalid/expired
+- `has` returns true only when entry exists, is not expired, and has a defined value
+- `remember` writes with `expiresAt` timestamp when TTL provided, omits for forever
+- `prune()` removes only expired entries; `flush()` removes everything
+- Counters (`increment`/`decrement`) are atomic within a single process and preserve existing TTL
 
 ## Scripts
 

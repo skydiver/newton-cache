@@ -5,6 +5,7 @@
   "keywords": [
     "cache",
     "file-cache",
+    "flat-file-cache",
     "memory-cache",
     "filesystem",
     "storage",
