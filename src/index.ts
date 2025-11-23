@@ -9,10 +9,17 @@
 export type { CacheAdapter } from "./adapters/base.js";
 
 // Export type definitions
-export type { CacheOptions, FileCacheOptions, MemoryCacheOptions, CachePayload } from "./types.js";
+export type {
+  CacheOptions,
+  FileCacheOptions,
+  FlatFileCacheOptions,
+  MemoryCacheOptions,
+  CachePayload,
+} from "./types.js";
 
 // Export adapter implementations
 export { FileCache } from "./adapters/file.js";
+export { FlatFileCache } from "./adapters/flat-file.js";
 export { MemoryCache } from "./adapters/memory.js";
 
 // Default export for convenience

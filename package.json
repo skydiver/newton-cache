@@ -1,6 +1,6 @@
 {
   "name": "flex-cache",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Lightweight cache library with pluggable adapters. Zero dependencies, TTL support, TypeScript-first.",
   "keywords": [
     "cache",

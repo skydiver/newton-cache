@@ -15,6 +15,7 @@ npm install flex-cache
 All adapters implement the same `CacheAdapter` interface. Currently available:
 
 - **FileCache** - Persistent file-based storage (survives restarts)
+- **FlatFileCache** - Persistent single-file storage (all keys in one JSON file)
 - **MemoryCache** - Fast in-memory storage (data lost on restart)
 
 ### Initializing
@@ -29,6 +30,21 @@ const cache = new FileCache<string>();
 // Or provide your own directory:
 const cache = new FileCache({ cachePath: "/var/tmp/my-cache" });
 ```
+
+**FlatFileCache** (single file, survives restarts):
+```ts
+import { FlatFileCache } from 'flex-cache';
+
+// Stores all entries in a single JSON file in the OS tmp directory
+const cache = new FlatFileCache<string>();
+
+// Or provide your own file path:
+const cache = new FlatFileCache({
+  filePath: "/var/cache/my-app.json"
+});
+```
+
+Use FlatFileCache when you want a small-to-medium cache that is easy to copy/backup (one file), or when inode usage matters. For large caches or very high write rates, prefer FileCache.
 
 **MemoryCache** (fast, in-memory only):
 ```ts
