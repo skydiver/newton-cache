@@ -432,4 +432,173 @@ describe("MemoryCache", () => {
       assert.equal(cache.has("expired"), false);
     });
   });
+
+  // Batch operations
+  it("getMany retrieves multiple values", () => {
+    const cache = new MemoryCache();
+    cache.put("key1", "value1");
+    cache.put("key2", "value2");
+    cache.put("key3", "value3");
+
+    const result = cache.getMany(["key1", "key2", "key3"]);
+    assert.deepEqual(result, {
+      key1: "value1",
+      key2: "value2",
+      key3: "value3",
+    });
+  });
+
+  it("getMany returns undefined for missing keys", () => {
+    const cache = new MemoryCache();
+    cache.put("key1", "value1");
+
+    const result = cache.getMany(["key1", "missing", "key3"]);
+    assert.deepEqual(result, {
+      key1: "value1",
+      missing: undefined,
+      key3: undefined,
+    });
+  });
+
+  it("getMany handles expired entries", () => {
+    const cache = new MemoryCache();
+    cache.put("valid", "data", 3600);
+    cache.put("expired", "old", 0.001);
+
+    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+    return delay(10).then(() => {
+      const result = cache.getMany(["valid", "expired"]);
+      assert.deepEqual(result, {
+        valid: "data",
+        expired: undefined,
+      });
+    });
+  });
+
+  it("getMany returns empty object for empty key array", () => {
+    const cache = new MemoryCache();
+    const result = cache.getMany([]);
+    assert.deepEqual(result, {});
+  });
+
+  it("putMany stores multiple key-value pairs", () => {
+    const cache = new MemoryCache();
+    cache.putMany({
+      key1: "value1",
+      key2: "value2",
+      key3: "value3",
+    });
+
+    assert.equal(cache.get("key1"), "value1");
+    assert.equal(cache.get("key2"), "value2");
+    assert.equal(cache.get("key3"), "value3");
+    assert.equal(cache.count(), 3);
+  });
+
+  it("putMany stores with TTL", () => {
+    const cache = new MemoryCache();
+    cache.putMany({
+      session1: "data1",
+      session2: "data2",
+    }, 10);
+
+    const ttl1 = cache.ttl("session1");
+    const ttl2 = cache.ttl("session2");
+    assert.ok(ttl1 !== null && ttl1 <= 10);
+    assert.ok(ttl2 !== null && ttl2 <= 10);
+  });
+
+  it("putMany stores without TTL when omitted", () => {
+    const cache = new MemoryCache();
+    cache.putMany({
+      perm1: "value1",
+      perm2: "value2",
+    });
+
+    assert.equal(cache.ttl("perm1"), null);
+    assert.equal(cache.ttl("perm2"), null);
+  });
+
+  it("putMany overwrites existing values", () => {
+    const cache = new MemoryCache();
+    cache.put("existing", "old");
+    cache.putMany({ existing: "new", other: "value" });
+
+    assert.equal(cache.get("existing"), "new");
+    assert.equal(cache.get("other"), "value");
+  });
+
+  it("putMany handles empty object", () => {
+    const cache = new MemoryCache();
+    cache.putMany({});
+    assert.equal(cache.count(), 0);
+  });
+
+  it("forgetMany removes multiple items", () => {
+    const cache = new MemoryCache();
+    cache.put("key1", "value1");
+    cache.put("key2", "value2");
+    cache.put("key3", "value3");
+
+    const removed = cache.forgetMany(["key1", "key3"]);
+    assert.equal(removed, 2);
+    assert.equal(cache.has("key1"), false);
+    assert.equal(cache.has("key2"), true);
+    assert.equal(cache.has("key3"), false);
+  });
+
+  it("forgetMany returns correct count for mixed existing and missing keys", () => {
+    const cache = new MemoryCache();
+    cache.put("key1", "value1");
+    cache.put("key2", "value2");
+
+    const removed = cache.forgetMany(["key1", "missing", "key2"]);
+    assert.equal(removed, 2);
+    assert.equal(cache.count(), 0);
+  });
+
+  it("forgetMany returns zero for all missing keys", () => {
+    const cache = new MemoryCache();
+    const removed = cache.forgetMany(["missing1", "missing2"]);
+    assert.equal(removed, 0);
+  });
+
+  it("forgetMany handles empty array", () => {
+    const cache = new MemoryCache();
+    cache.put("key", "value");
+    const removed = cache.forgetMany([]);
+    assert.equal(removed, 0);
+    assert.equal(cache.count(), 1);
+  });
+
+  it("batch operations work together", () => {
+    const cache = new MemoryCache();
+
+    // Store batch
+    cache.putMany({
+      user1: "Alice",
+      user2: "Bob",
+      user3: "Charlie",
+    }, 60);
+
+    // Retrieve batch
+    const users = cache.getMany(["user1", "user2", "user3"]);
+    assert.deepEqual(users, {
+      user1: "Alice",
+      user2: "Bob",
+      user3: "Charlie",
+    });
+
+    // Remove some
+    const removed = cache.forgetMany(["user1", "user3"]);
+    assert.equal(removed, 2);
+
+    // Verify remaining
+    const remaining = cache.getMany(["user1", "user2", "user3"]);
+    assert.deepEqual(remaining, {
+      user1: undefined,
+      user2: "Bob",
+      user3: undefined,
+    });
+  });
 });

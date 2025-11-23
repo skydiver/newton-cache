@@ -152,4 +152,44 @@ export interface CacheAdapter<V = unknown> {
    * @returns The new value after decrementing
    */
   decrement(key: string, amount?: number): number;
+
+  /**
+   * Retrieves multiple cached values by their keys.
+   *
+   * @param keys - Array of cache keys to retrieve
+   * @returns Object mapping keys to their values (undefined for missing/expired keys)
+   *
+   * @example
+   * ```ts
+   * const result = cache.getMany(['user:1', 'user:2', 'user:3']);
+   * // { 'user:1': data1, 'user:2': undefined, 'user:3': data3 }
+   * ```
+   */
+  getMany(keys: string[]): Record<string, V | undefined>;
+
+  /**
+   * Stores multiple key-value pairs in the cache with an optional TTL.
+   *
+   * @param items - Object containing key-value pairs to store
+   * @param seconds - Optional TTL in seconds (omit for no expiration)
+   *
+   * @example
+   * ```ts
+   * cache.putMany({ 'key1': 'val1', 'key2': 'val2' }, 60);
+   * ```
+   */
+  putMany(items: Record<string, V>, seconds?: number): void;
+
+  /**
+   * Removes multiple items from the cache.
+   *
+   * @param keys - Array of cache keys to remove
+   * @returns The number of items that were actually removed
+   *
+   * @example
+   * ```ts
+   * const removed = cache.forgetMany(['key1', 'key2', 'key3']); // Returns 2 if only 2 existed
+   * ```
+   */
+  forgetMany(keys: string[]): number;
 }

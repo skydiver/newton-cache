@@ -929,4 +929,192 @@ describe("FileCache", () => {
     }
     cleanup();
   });
+
+  // Batch operations
+  it("getMany retrieves multiple values", () => {
+    const { cache, cleanup } = setupCache();
+    cache.put("key1", "value1");
+    cache.put("key2", "value2");
+    cache.put("key3", "value3");
+
+    const result = cache.getMany(["key1", "key2", "key3"]);
+    assert.deepEqual(result, {
+      key1: "value1",
+      key2: "value2",
+      key3: "value3",
+    });
+    cleanup();
+  });
+
+  it("getMany returns undefined for missing keys", () => {
+    const { cache, cleanup } = setupCache();
+    cache.put("key1", "value1");
+
+    const result = cache.getMany(["key1", "missing", "key3"]);
+    assert.deepEqual(result, {
+      key1: "value1",
+      missing: undefined,
+      key3: undefined,
+    });
+    cleanup();
+  });
+
+  it("getMany handles expired entries", () => {
+    const { cache, cleanup, dir } = setupCache();
+    cache.put("valid", "data", 3600);
+
+    const expiredKey = "expired";
+    const expiredFilename = path.join(dir, encodeURIComponent(expiredKey));
+    fs.writeFileSync(
+      expiredFilename,
+      JSON.stringify({ value: "old", expiresAt: Date.now() - 1000, key: expiredKey }),
+      "utf8"
+    );
+
+    const result = cache.getMany(["valid", "expired"]);
+    assert.deepEqual(result, {
+      valid: "data",
+      expired: undefined,
+    });
+    assert.equal(fs.existsSync(expiredFilename), false);
+    cleanup();
+  });
+
+  it("getMany returns empty object for empty key array", () => {
+    const { cache, cleanup } = setupCache();
+    const result = cache.getMany([]);
+    assert.deepEqual(result, {});
+    cleanup();
+  });
+
+  it("putMany stores multiple key-value pairs", () => {
+    const { cache, cleanup } = setupCache();
+    cache.putMany({
+      key1: "value1",
+      key2: "value2",
+      key3: "value3",
+    });
+
+    assert.equal(cache.get("key1"), "value1");
+    assert.equal(cache.get("key2"), "value2");
+    assert.equal(cache.get("key3"), "value3");
+    assert.equal(cache.count(), 3);
+    cleanup();
+  });
+
+  it("putMany stores with TTL", () => {
+    const { cache, cleanup } = setupCache();
+    cache.putMany({
+      session1: "data1",
+      session2: "data2",
+    }, 10);
+
+    const ttl1 = cache.ttl("session1");
+    const ttl2 = cache.ttl("session2");
+    assert.ok(ttl1 !== null && ttl1 <= 10);
+    assert.ok(ttl2 !== null && ttl2 <= 10);
+    cleanup();
+  });
+
+  it("putMany stores without TTL when omitted", () => {
+    const { cache, cleanup } = setupCache();
+    cache.putMany({
+      perm1: "value1",
+      perm2: "value2",
+    });
+
+    assert.equal(cache.ttl("perm1"), null);
+    assert.equal(cache.ttl("perm2"), null);
+    cleanup();
+  });
+
+  it("putMany overwrites existing values", () => {
+    const { cache, cleanup } = setupCache();
+    cache.put("existing", "old");
+    cache.putMany({ existing: "new", other: "value" });
+
+    assert.equal(cache.get("existing"), "new");
+    assert.equal(cache.get("other"), "value");
+    cleanup();
+  });
+
+  it("putMany handles empty object", () => {
+    const { cache, cleanup } = setupCache();
+    cache.putMany({});
+    assert.equal(cache.count(), 0);
+    cleanup();
+  });
+
+  it("forgetMany removes multiple items", () => {
+    const { cache, cleanup, dir } = setupCache();
+    cache.put("key1", "value1");
+    cache.put("key2", "value2");
+    cache.put("key3", "value3");
+
+    const removed = cache.forgetMany(["key1", "key3"]);
+    assert.equal(removed, 2);
+    assert.equal(cache.has("key1"), false);
+    assert.equal(cache.has("key2"), true);
+    assert.equal(cache.has("key3"), false);
+    cleanup();
+  });
+
+  it("forgetMany returns correct count for mixed existing and missing keys", () => {
+    const { cache, cleanup } = setupCache();
+    cache.put("key1", "value1");
+    cache.put("key2", "value2");
+
+    const removed = cache.forgetMany(["key1", "missing", "key2"]);
+    assert.equal(removed, 2);
+    assert.equal(cache.count(), 0);
+    cleanup();
+  });
+
+  it("forgetMany returns zero for all missing keys", () => {
+    const { cache, cleanup } = setupCache();
+    const removed = cache.forgetMany(["missing1", "missing2"]);
+    assert.equal(removed, 0);
+    cleanup();
+  });
+
+  it("forgetMany handles empty array", () => {
+    const { cache, cleanup } = setupCache();
+    cache.put("key", "value");
+    const removed = cache.forgetMany([]);
+    assert.equal(removed, 0);
+    assert.equal(cache.count(), 1);
+    cleanup();
+  });
+
+  it("batch operations work together", () => {
+    const { cache, cleanup } = setupCache();
+
+    // Store batch
+    cache.putMany({
+      user1: "Alice",
+      user2: "Bob",
+      user3: "Charlie",
+    }, 60);
+
+    // Retrieve batch
+    const users = cache.getMany(["user1", "user2", "user3"]);
+    assert.deepEqual(users, {
+      user1: "Alice",
+      user2: "Bob",
+      user3: "Charlie",
+    });
+
+    // Remove some
+    const removed = cache.forgetMany(["user1", "user3"]);
+    assert.equal(removed, 2);
+
+    // Verify remaining
+    const remaining = cache.getMany(["user1", "user2", "user3"]);
+    assert.deepEqual(remaining, {
+      user1: undefined,
+      user2: "Bob",
+      user3: undefined,
+    });
+    cleanup();
+  });
 });

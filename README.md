@@ -179,6 +179,37 @@ cache.increment('balance', 50);      // 50
 cache.decrement('balance', 10);      // 40
 ```
 
+### Batch operations
+
+Process multiple cache keys in a single operation:
+
+```ts
+// Store multiple key-value pairs at once
+cache.putMany({
+  'user:1': { name: 'Alice', role: 'admin' },
+  'user:2': { name: 'Bob', role: 'user' },
+  'user:3': { name: 'Charlie', role: 'user' },
+}, 3600); // Optional TTL applies to all
+
+// Retrieve multiple values
+const users = cache.getMany(['user:1', 'user:2', 'user:3']);
+// Returns: { 'user:1': {...}, 'user:2': {...}, 'user:3': {...} }
+
+// Missing keys return undefined
+const partial = cache.getMany(['user:1', 'missing', 'user:3']);
+// Returns: { 'user:1': {...}, 'missing': undefined, 'user:3': {...} }
+
+// Remove multiple keys
+const removed = cache.forgetMany(['user:1', 'user:2']);
+// Returns: 2 (number of keys actually removed)
+```
+
+Batch operations are ideal for:
+- Bulk user data loading
+- Multi-key cache warming
+- Batch invalidation
+- Reducing I/O overhead when working with multiple keys
+
 ## Real-world Examples
 
 ### Rate Limiting
@@ -267,7 +298,7 @@ function enqueueJob(jobId: string, payload: any) {
 ### Write Performance
 - **Single write**: ~1-3ms (JSON serialization + file write)
 - **Atomic counters**: ~2-4ms (read + increment + write)
-- Batch operations can be simulated with `Promise.all()`
+- **Batch operations**: Linear with key count (delegates to individual operations)
 
 ### Scalability
 - **Sweet spot**: 1-10,000 entries
