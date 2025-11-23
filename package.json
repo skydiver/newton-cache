@@ -17,13 +17,13 @@
     "temporary",
     "zero-dependencies"
   ],
-  "homepage": "https://github.com/skydiver/node-cache#readme",
+  "homepage": "https://github.com/skydiver/flex-cache#readme",
   "bugs": {
-    "url": "https://github.com/skydiver/node-cache/issues"
+    "url": "https://github.com/skydiver/flex-cache/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/skydiver/node-cache.git"
+    "url": "git+https://github.com/skydiver/flex-cache.git"
   },
   "license": "MIT",
   "author": {
