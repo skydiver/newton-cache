@@ -54,28 +54,28 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
    *
    * @example
    * ```ts
-   * const value = cache.get('user:123'); // Returns value or undefined
-   * const value = cache.get('user:123', 'default'); // Returns value or 'default'
-   * const value = cache.get('user:123', () => fetchUser()); // Returns value or calls factory
+   * const value = await cache.get('user:123'); // Returns value or undefined
+   * const value = await cache.get('user:123', 'default'); // Returns value or 'default'
+   * const value = await cache.get('user:123', () => fetchUser()); // Returns value or calls factory
    * ```
    */
-  get(key: string, defaultValue?: V | (() => V)): V | undefined {
+  async get(key: string, defaultValue?: V | (() => V | Promise<V>)): Promise<V | undefined> {
     const filename = this.pathForKey(key);
-    if (!fs.existsSync(filename)) return this.resolveDefault(defaultValue);
+    if (!fs.existsSync(filename)) return await this.resolveDefault(defaultValue);
 
     try {
       const content = fs.readFileSync(filename, "utf8");
       const parsed = JSON.parse(content) as CachePayload<V> | null;
-      if (!parsed) return this.resolveDefault(defaultValue);
+      if (!parsed) return await this.resolveDefault(defaultValue);
 
       if (parsed.expiresAt != null && parsed.expiresAt <= Date.now()) {
         fs.unlinkSync(filename);
-        return this.resolveDefault(defaultValue);
+        return await this.resolveDefault(defaultValue);
       }
 
       return parsed.value ?? undefined;
     } catch {
-      return this.resolveDefault(defaultValue);
+      return await this.resolveDefault(defaultValue);
     }
   }
 
@@ -88,24 +88,24 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
    *
    * @example
    * ```ts
-   * const token = cache.pull('one-time-token'); // Read and delete
+   * const token = await cache.pull('one-time-token'); // Read and delete
    * ```
    */
-  pull(key: string, defaultValue?: V | (() => V)): V | undefined {
+  async pull(key: string, defaultValue?: V | (() => V | Promise<V>)): Promise<V | undefined> {
     const filename = this.pathForKey(key);
-    if (!fs.existsSync(filename)) return this.resolveDefault(defaultValue);
+    if (!fs.existsSync(filename)) return await this.resolveDefault(defaultValue);
 
     try {
       const content = fs.readFileSync(filename, "utf8");
       const parsed = JSON.parse(content) as CachePayload<V> | null;
       if (!parsed) {
         fs.unlinkSync(filename);
-        return this.resolveDefault(defaultValue);
+        return await this.resolveDefault(defaultValue);
       }
 
       if (parsed.expiresAt != null && parsed.expiresAt <= Date.now()) {
         fs.unlinkSync(filename);
-        return this.resolveDefault(defaultValue);
+        return await this.resolveDefault(defaultValue);
       }
 
       fs.unlinkSync(filename);
@@ -118,7 +118,7 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
           /* ignore */
         }
       }
-      return this.resolveDefault(defaultValue);
+      return await this.resolveDefault(defaultValue);
     }
   }
 
@@ -131,11 +131,11 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
    *
    * @example
    * ```ts
-   * cache.put('key', 'value', 60); // Expires in 60 seconds
-   * cache.put('key', 'value');      // Never expires
+   * await cache.put('key', 'value', 60); // Expires in 60 seconds
+   * await cache.put('key', 'value');      // Never expires
    * ```
    */
-  put(key: string, value: V, seconds?: number): void {
+  async put(key: string, value: V, seconds?: number): Promise<void> {
     const expiresAt =
       seconds == null || !Number.isFinite(seconds) ? undefined : Date.now() + seconds * 1000;
     // Store original key for reconstruction (needed for hashed long keys)
@@ -152,11 +152,11 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
    *
    * @example
    * ```ts
-   * cache.forever('config', { setting: 'value' });
+   * await cache.forever('config', { setting: 'value' });
    * ```
    */
-  forever(key: string, value: V): void {
-    this.put(key, value);
+  async forever(key: string, value: V): Promise<void> {
+    await this.put(key, value);
   }
 
   /**
@@ -167,10 +167,10 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
    *
    * @example
    * ```ts
-   * const removed = cache.forget('user:123');
+   * const removed = await cache.forget('user:123');
    * ```
    */
-  forget(key: string): boolean {
+  async forget(key: string): Promise<boolean> {
     const filename = this.pathForKey(key);
     if (!fs.existsSync(filename)) return false;
     fs.unlinkSync(filename);
@@ -182,10 +182,10 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
    *
    * @example
    * ```ts
-   * cache.flush(); // Removes all cached items
+   * await cache.flush(); // Removes all cached items
    * ```
    */
-  flush(): void {
+  async flush(): Promise<void> {
     try {
       const files = fs.readdirSync(this.cacheDir);
       for (const file of files) {
@@ -206,13 +206,13 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
    *
    * @example
    * ```ts
-   * const added = cache.add('lock', 'process-1', 10); // Returns true
-   * const added = cache.add('lock', 'process-2', 10); // Returns false (already exists)
+   * const added = await cache.add('lock', 'process-1', 10); // Returns true
+   * const added = await cache.add('lock', 'process-2', 10); // Returns false (already exists)
    * ```
    */
-  add(key: string, value: V, seconds?: number): boolean {
-    if (this.has(key)) return false;
-    this.put(key, value, seconds);
+  async add(key: string, value: V, seconds?: number): Promise<boolean> {
+    if (await this.has(key)) return false;
+    await this.put(key, value, seconds);
     return true;
   }
 
@@ -226,18 +226,18 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
    *
    * @example
    * ```ts
-   * const users = cache.remember('users', 60, () => fetchUsers());
+   * const users = await cache.remember('users', 60, () => fetchUsers());
    * // First call: executes fetchUsers() and caches result
    * // Subsequent calls: returns cached value
    * ```
    */
-  remember(key: string, seconds: number, factory: () => V): V {
-    if (this.has(key)) {
-      const existing = this.get(key);
+  async remember(key: string, seconds: number, factory: () => V | Promise<V>): Promise<V> {
+    if (await this.has(key)) {
+      const existing = await this.get(key);
       if (existing !== undefined) return existing;
     }
 
-    const value = factory();
+    const value = await factory();
     const expiresAt = Number.isFinite(seconds) ? Date.now() + seconds * 1000 : undefined;
     const payload = JSON.stringify({ value, expiresAt, key });
     const filename = this.pathForKey(key);
@@ -254,11 +254,11 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
    *
    * @example
    * ```ts
-   * const config = cache.rememberForever('config', () => loadConfig());
+   * const config = await cache.rememberForever('config', () => loadConfig());
    * ```
    */
-  rememberForever(key: string, factory: () => V): V {
-    return this.remember(key, Number.POSITIVE_INFINITY, factory);
+  async rememberForever(key: string, factory: () => V | Promise<V>): Promise<V> {
+    return await this.remember(key, Number.POSITIVE_INFINITY, factory);
   }
 
   /*****************************************************************************
@@ -290,12 +290,12 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
    *
    * @example
    * ```ts
-   * if (cache.has('user:123')) {
+   * if (await cache.has('user:123')) {
    *   // Value exists and is not expired
    * }
    * ```
    */
-  has(key: string): boolean {
+  async has(key: string): Promise<boolean> {
     const filename = this.pathForKey(key);
     if (!fs.existsSync(filename)) return false;
 
@@ -325,11 +325,11 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
    *
    * @example
    * ```ts
-   * const allKeys = cache.keys();
+   * const allKeys = await cache.keys();
    * console.log('Cached keys:', allKeys);
    * ```
    */
-  keys(): string[] {
+  async keys(): Promise<string[]> {
     try {
       const files = fs.readdirSync(this.cacheDir);
       const validKeys: string[] = [];
@@ -371,12 +371,12 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
    *
    * @example
    * ```ts
-   * const itemCount = cache.count();
+   * const itemCount = await cache.count();
    * console.log(`Cache contains ${itemCount} items`);
    * ```
    */
-  count(): number {
-    return this.keys().length;
+  async count(): Promise<number> {
+    return (await this.keys()).length;
   }
 
   /**
@@ -389,11 +389,11 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
    *
    * @example
    * ```ts
-   * const bytes = cache.size();
+   * const bytes = await cache.size();
    * console.log(`Cache size: ${(bytes / 1024).toFixed(2)} KB`);
    * ```
    */
-  size(): number {
+  async size(): Promise<number> {
     try {
       const files = fs.readdirSync(this.cacheDir);
       let totalSize = 0;
@@ -425,11 +425,11 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
    *
    * @example
    * ```ts
-   * const removed = cache.prune();
+   * const removed = await cache.prune();
    * console.log(`Removed ${removed} expired entries`);
    * ```
    */
-  prune(): number {
+  async prune(): Promise<number> {
     try {
       const files = fs.readdirSync(this.cacheDir);
       let removed = 0;
@@ -477,11 +477,11 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
    *
    * @example
    * ```ts
-   * cache.put('session', data, 3600); // 1 hour TTL
-   * const remaining = cache.ttl('session'); // e.g., 3599
+   * await cache.put('session', data, 3600); // 1 hour TTL
+   * const remaining = await cache.ttl('session'); // e.g., 3599
    * ```
    */
-  ttl(key: string): number | null {
+  async ttl(key: string): Promise<number | null> {
     const filename = this.pathForKey(key);
     if (!fs.existsSync(filename)) return null;
 
@@ -517,11 +517,11 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
    *
    * @example
    * ```ts
-   * cache.put('session', data, 60);  // Expires in 60 seconds
-   * cache.touch('session', 3600);    // Extend to 1 hour from now
+   * await cache.put('session', data, 60);  // Expires in 60 seconds
+   * await cache.touch('session', 3600);    // Extend to 1 hour from now
    * ```
    */
-  touch(key: string, seconds: number): boolean {
+  async touch(key: string, seconds: number): Promise<boolean> {
     const filename = this.pathForKey(key);
     if (!fs.existsSync(filename)) return false;
 
@@ -566,12 +566,12 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
    *
    * @example
    * ```ts
-   * cache.increment('page-views');        // 1
-   * cache.increment('page-views');        // 2
-   * cache.increment('page-views', 10);    // 12
+   * await cache.increment('page-views');        // 1
+   * await cache.increment('page-views');        // 2
+   * await cache.increment('page-views', 10);    // 12
    * ```
    */
-  increment(key: string, amount = 1): number {
+  async increment(key: string, amount = 1): Promise<number> {
     const filename = this.pathForKey(key);
     let currentValue = 0;
     let expiresAt: number | undefined;
@@ -629,13 +629,13 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
    *
    * @example
    * ```ts
-   * cache.put('credits', 100);
-   * cache.decrement('credits');        // 99
-   * cache.decrement('credits', 10);    // 89
+   * await cache.put('credits', 100);
+   * await cache.decrement('credits');        // 99
+   * await cache.decrement('credits', 10);    // 89
    * ```
    */
-  decrement(key: string, amount = 1): number {
-    return this.increment(key, -amount);
+  async decrement(key: string, amount = 1): Promise<number> {
+    return await this.increment(key, -amount);
   }
 
 }

@@ -1,6 +1,6 @@
 # newton-cache
 
-Lightweight cache library with pluggable adapters. Zero dependencies, TTL support, TypeScript-first. Ships as an ES module with complete type definitions.
+Lightweight async cache library with pluggable adapters. Zero dependencies, TTL support, TypeScript-first. Ships as an ES module with complete type definitions. All cache operations return Promises.
 
 ## Install
 
@@ -76,19 +76,19 @@ All adapters implement the same interface, so you can easily switch between them
 
 ```ts
 // If a file named "answer" exists in the cache directory, read it:
-const value = cache.get('answer'); // parsed value, or undefined if missing
+const value = await cache.get('answer'); // parsed value, or undefined if missing
 
 // Provide a default if the file doesn't exist or is unreadable:
-const fallback = cache.get('missing-key', 'default');
+const fallback = await cache.get('missing-key', 'default');
 
 // Or pass a factory/closure so the default is only computed when needed:
-const fromFactory = cache.get('missing', () => expensiveLookup());
+const fromFactory = await cache.get('missing', () => expensiveLookup());
 
 // You can also pass the function reference directly:
-const directFactory = cache.get('missing', expensiveLookup);
+const directFactory = await cache.get('missing', expensiveLookup);
 
 // Inline anonymous factory
-const twoLine = cache.get('computed', () => {
+const twoLine = await cache.get('computed', () => {
   const value = expensiveLookup();
   return value;
 });
@@ -98,7 +98,7 @@ const twoLine = cache.get('computed', () => {
 
 ```ts
 // Returns true when the file exists and contains a defined value.
-if (cache.has('answer')) {
+if (await cache.has('answer')) {
   // ...
 }
 ```
@@ -107,49 +107,49 @@ if (cache.has('answer')) {
 
 ```ts
 // Store with a 10-second TTL:
-cache.put('key', 'value', 10);
+await cache.put('key', 'value', 10);
 
 // Store indefinitely (no TTL):
-cache.put('key', 'value');
+await cache.put('key', 'value');
 
 // Store permanently (alias for put without TTL):
-cache.forever('key', 'value');
+await cache.forever('key', 'value');
 ```
 
 ### Store only when missing
 
 ```ts
 // Add only when missing; returns true if stored:
-const added = cache.add('key', 'value', 10);
+const added = await cache.add('key', 'value', 10);
 ```
 
 ### Deleting items
 
 ```ts
 // Remove and return whether it existed:
-const removed = cache.forget('key');
+const removed = await cache.forget('key');
 
 // Clear all cached entries:
-cache.flush();
+await cache.flush();
 ```
 
 ### Special (compose read + write)
 
 ```ts
 // Retrieve or compute and store for 60 seconds (TTL is in seconds):
-const users = cache.remember('users', 60, () => fetchUsers());
+const users = await cache.remember('users', 60, () => fetchUsers());
 
 // Store forever when missing:
-const usersAlways = cache.rememberForever('users', () => fetchUsers());
+const usersAlways = await cache.rememberForever('users', () => fetchUsers());
 
 // Retrieve and remove the cached value. Returns undefined when missing.
-const pulled = cache.pull('answer');
+const pulled = await cache.pull('answer');
 
 // Provide a static default:
-const staticDefault = cache.pull('missing', 'default');
+const staticDefault = await cache.pull('missing', 'default');
 
 // Provide a default (or factory) when missing:
-const fallback = cache.pull('missing', () => expensiveLookup());
+const fallback = await cache.pull('missing', () => expensiveLookup());
 ```
 
 If the entry is missing or expired, the factory runs and the result is written to disk. Otherwise, the cached value is returned. `pull` removes the file after reading.
@@ -158,13 +158,13 @@ If the entry is missing or expired, the factory runs and the result is written t
 
 ```ts
 // Get all cache keys
-const keys = cache.keys(); // ['user:1', 'user:2', 'session:abc']
+const keys = await cache.keys(); // ['user:1', 'user:2', 'session:abc']
 
 // Count cached items
-const count = cache.count(); // 3
+const count = await cache.count(); // 3
 
 // Get total cache size in bytes
-const bytes = cache.size(); // 1024
+const bytes = await cache.size(); // 1024
 console.log(`Cache size: ${(bytes / 1024).toFixed(2)} KB`);
 ```
 
@@ -172,43 +172,43 @@ console.log(`Cache size: ${(bytes / 1024).toFixed(2)} KB`);
 
 ```ts
 // Remove expired entries (keeps valid ones)
-const removed = cache.prune();
+const removed = await cache.prune();
 console.log(`Removed ${removed} expired entries`);
 
 // Clear everything (removes all entries)
-cache.flush();
+await cache.flush();
 ```
 
 ### TTL management
 
 ```ts
 // Get remaining time-to-live in seconds
-cache.put('session', data, 3600); // 1 hour
-const ttl = cache.ttl('session'); // e.g., 3599
+await cache.put('session', data, 3600); // 1 hour
+const ttl = await cache.ttl('session'); // e.g., 3599
 
 // Extend TTL of existing entry
-cache.touch('session', 7200); // Extend to 2 hours from now
+await cache.touch('session', 7200); // Extend to 2 hours from now
 
 // Remove expiration
-cache.touch('session', Number.POSITIVE_INFINITY);
+await cache.touch('session', Number.POSITIVE_INFINITY);
 ```
 
 ### Atomic counters
 
 ```ts
 // Increment counters
-cache.increment('page-views');       // 1
-cache.increment('page-views');       // 2
-cache.increment('page-views', 10);   // 12
+await cache.increment('page-views');       // 1
+await cache.increment('page-views');       // 2
+await cache.increment('page-views', 10);   // 12
 
 // Decrement counters
-cache.put('credits', 100);
-cache.decrement('credits');          // 99
-cache.decrement('credits', 20);      // 79
+await cache.put('credits', 100);
+await cache.decrement('credits');          // 99
+await cache.decrement('credits', 20);      // 79
 
 // Use together
-cache.increment('balance', 50);      // 50
-cache.decrement('balance', 10);      // 40
+await cache.increment('balance', 50);      // 50
+await cache.decrement('balance', 10);      // 40
 ```
 
 ### Batch operations
@@ -217,22 +217,22 @@ Process multiple cache keys in a single operation:
 
 ```ts
 // Store multiple key-value pairs at once
-cache.putMany({
+await cache.putMany({
   'user:1': { name: 'Alice', role: 'admin' },
   'user:2': { name: 'Bob', role: 'user' },
   'user:3': { name: 'Charlie', role: 'user' },
 }, 3600); // Optional TTL applies to all
 
 // Retrieve multiple values
-const users = cache.getMany(['user:1', 'user:2', 'user:3']);
+const users = await cache.getMany(['user:1', 'user:2', 'user:3']);
 // Returns: { 'user:1': {...}, 'user:2': {...}, 'user:3': {...} }
 
 // Missing keys return undefined
-const partial = cache.getMany(['user:1', 'missing', 'user:3']);
+const partial = await cache.getMany(['user:1', 'missing', 'user:3']);
 // Returns: { 'user:1': {...}, 'missing': undefined, 'user:3': {...} }
 
 // Remove multiple keys
-const removed = cache.forgetMany(['user:1', 'user:2']);
+const removed = await cache.forgetMany(['user:1', 'user:2']);
 // Returns: 2 (number of keys actually removed)
 ```
 
@@ -249,16 +249,16 @@ Batch operations are ideal for:
 ```ts
 const cache = new FileCache<number>();
 
-function checkRateLimit(userId: string): boolean {
+async function checkRateLimit(userId: string): Promise<boolean> {
   const key = `rate-limit:${userId}`;
-  const requests = cache.get(key, 0);
+  const requests = await cache.get(key, 0);
 
   if (requests >= 100) {
     return false; // Rate limit exceeded
   }
 
-  cache.increment(key);
-  cache.touch(key, 3600); // 1 hour window
+  await cache.increment(key);
+  await cache.touch(key, 3600); // 1 hour window
   return true;
 }
 ```
@@ -269,7 +269,7 @@ function checkRateLimit(userId: string): boolean {
 const cache = new FileCache<APIResponse>();
 
 async function fetchUserProfile(userId: string) {
-  return cache.remember(`user:${userId}`, 300, async () => {
+  return await cache.remember(`user:${userId}`, 300, async () => {
     const response = await fetch(`/api/users/${userId}`);
     return response.json();
   });
@@ -281,14 +281,14 @@ async function fetchUserProfile(userId: string) {
 ```ts
 const sessions = new FileCache<SessionData>();
 
-function createSession(userId: string, data: SessionData) {
+async function createSession(userId: string, data: SessionData) {
   const sessionId = generateId();
-  sessions.put(sessionId, data, 86400); // 24 hours
+  await sessions.put(sessionId, data, 86400); // 24 hours
   return sessionId;
 }
 
-function extendSession(sessionId: string) {
-  sessions.touch(sessionId, 86400); // Extend by 24 hours
+async function extendSession(sessionId: string) {
+  await sessions.touch(sessionId, 86400); // Extend by 24 hours
 }
 ```
 
@@ -297,8 +297,8 @@ function extendSession(sessionId: string) {
 ```ts
 const flags = new FileCache<boolean>();
 
-function isFeatureEnabled(feature: string): boolean {
-  return flags.remember(feature, 60, () => {
+async function isFeatureEnabled(feature: string): Promise<boolean> {
+  return await flags.remember(feature, 60, () => {
     // Fetch from remote config service
     return fetchFeatureFlag(feature);
   });
@@ -310,8 +310,8 @@ function isFeatureEnabled(feature: string): boolean {
 ```ts
 const jobs = new FileCache<string>();
 
-function enqueueJob(jobId: string, payload: any) {
-  const added = jobs.add(`job:${jobId}`, payload, 3600);
+async function enqueueJob(jobId: string, payload: any) {
+  const added = await jobs.add(`job:${jobId}`, payload, 3600);
   if (!added) {
     console.log('Job already queued');
     return false;
@@ -354,10 +354,10 @@ function enqueueJob(jobId: string, payload: any) {
 ```ts
 // ❌ Unsafe in cluster mode
 cluster.fork();
-cache.increment('counter'); // Race condition!
+await cache.increment('counter'); // Race condition!
 
 // ✅ Safe in single process
-cache.increment('counter');
+await cache.increment('counter');
 ```
 
 ### Filesystem Dependencies

@@ -55,20 +55,20 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
    *
    * @example
    * ```ts
-   * const value = cache.get('user:123'); // Returns value or undefined
-   * const value = cache.get('user:123', 'default'); // Returns value or 'default'
-   * const value = cache.get('user:123', () => fetchUser()); // Returns value or calls factory
+   * const value = await cache.get('user:123'); // Returns value or undefined
+   * const value = await cache.get('user:123', 'default'); // Returns value or 'default'
+   * const value = await cache.get('user:123', () => fetchUser()); // Returns value or calls factory
    * ```
    */
-  get(key: string, defaultValue?: V | (() => V)): V | undefined {
+  async get(key: string, defaultValue?: V | (() => V)): Promise<V | undefined> {
     this.loadFromDisk();
     const entry = this.store.get(key);
-    if (!entry) return this.resolveDefault(defaultValue);
+    if (!entry) return await this.resolveDefault(defaultValue);
 
     if (this.isExpired(entry)) {
       this.store.delete(key);
       this.saveToDisk();
-      return this.resolveDefault(defaultValue);
+      return await this.resolveDefault(defaultValue);
     }
 
     return entry.value ?? undefined;
@@ -83,19 +83,19 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
    *
    * @example
    * ```ts
-   * const token = cache.pull('one-time-token'); // Read and delete
+   * const token = await cache.pull('one-time-token'); // Read and delete
    * ```
    */
-  pull(key: string, defaultValue?: V | (() => V)): V | undefined {
+  async pull(key: string, defaultValue?: V | (() => V)): Promise<V | undefined> {
     this.loadFromDisk();
     const entry = this.store.get(key);
-    if (!entry) return this.resolveDefault(defaultValue);
+    if (!entry) return await this.resolveDefault(defaultValue);
 
     this.store.delete(key);
 
     if (this.isExpired(entry)) {
       this.saveToDisk();
-      return this.resolveDefault(defaultValue);
+      return await this.resolveDefault(defaultValue);
     }
 
     this.saveToDisk();
@@ -113,11 +113,11 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
    *
    * @example
    * ```ts
-   * cache.put('session:abc', userData, 3600); // Store for 1 hour
-   * cache.put('config', settings); // Store forever
+   * await cache.put('session:abc', userData, 3600); // Store for 1 hour
+   * await cache.put('config', settings); // Store forever
    * ```
    */
-  put(key: string, value: V, seconds?: number): void {
+  async put(key: string, value: V, seconds?: number): Promise<void> {
     this.loadFromDisk();
     const expiresAt =
       seconds == null || !Number.isFinite(seconds) ? undefined : Date.now() + seconds * 1000;
@@ -133,11 +133,11 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
    *
    * @example
    * ```ts
-   * cache.forever('app-version', '1.0.0');
+   * await cache.forever('app-version', '1.0.0');
    * ```
    */
-  forever(key: string, value: V): void {
-    this.put(key, value);
+  async forever(key: string, value: V): Promise<void> {
+    await this.put(key, value);
   }
 
   /**
@@ -148,10 +148,10 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
    *
    * @example
    * ```ts
-   * const removed = cache.forget('session:abc'); // true if existed
+   * const removed = await cache.forget('session:abc'); // true if existed
    * ```
    */
-  forget(key: string): boolean {
+  async forget(key: string): Promise<boolean> {
     this.loadFromDisk();
     const existed = this.store.delete(key);
     if (existed) this.saveToDisk();
@@ -163,10 +163,10 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
    *
    * @example
    * ```ts
-   * cache.flush(); // All data deleted
+   * await cache.flush(); // All data deleted
    * ```
    */
-  flush(): void {
+  async flush(): Promise<void> {
     this.loaded = true;
     this.store.clear();
     try {
@@ -186,12 +186,12 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
    *
    * @example
    * ```ts
-   * const stored = cache.add('lock:resource', true, 60); // Returns true if lock acquired
+   * const stored = await cache.add('lock:resource', true, 60); // Returns true if lock acquired
    * ```
    */
-  add(key: string, value: V, seconds?: number): boolean {
-    if (this.has(key)) return false;
-    this.put(key, value, seconds);
+  async add(key: string, value: V, seconds?: number): Promise<boolean> {
+    if (await this.has(key)) return false;
+    await this.put(key, value, seconds);
     return true;
   }
 
@@ -205,17 +205,17 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
    *
    * @example
    * ```ts
-   * const users = cache.remember('users', 60, () => fetchUsers());
+   * const users = await cache.remember('users', 60, () => fetchUsers());
    * ```
    */
-  remember(key: string, seconds: number, factory: () => V): V {
-    if (this.has(key)) {
-      const existing = this.get(key);
+  async remember(key: string, seconds: number, factory: () => V | Promise<V>): Promise<V> {
+    if (await this.has(key)) {
+      const existing = await this.get(key);
       if (existing !== undefined) return existing;
     }
 
-    const value = factory();
-    this.put(key, value, seconds);
+    const value = await factory();
+    await this.put(key, value, seconds);
     return value;
   }
 
@@ -228,11 +228,11 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
    *
    * @example
    * ```ts
-   * const config = cache.rememberForever('config', () => loadConfig());
+   * const config = await cache.rememberForever('config', () => loadConfig());
    * ```
    */
-  rememberForever(key: string, factory: () => V): V {
-    return this.remember(key, Number.POSITIVE_INFINITY, factory);
+  async rememberForever(key: string, factory: () => V | Promise<V>): Promise<V> {
+    return await this.remember(key, Number.POSITIVE_INFINITY, factory);
   }
 
   /**
@@ -243,12 +243,12 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
    *
    * @example
    * ```ts
-   * if (cache.has('user:123')) {
+   * if (await cache.has('user:123')) {
    *   // User data is cached
    * }
    * ```
    */
-  has(key: string): boolean {
+  async has(key: string): Promise<boolean> {
     this.loadFromDisk();
     const entry = this.store.get(key);
     if (!entry) return false;
@@ -269,10 +269,10 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
    *
    * @example
    * ```ts
-   * const allKeys = cache.keys(); // ['user:1', 'user:2', 'session:abc']
+   * const allKeys = await cache.keys(); // ['user:1', 'user:2', 'session:abc']
    * ```
    */
-  keys(): string[] {
+  async keys(): Promise<string[]> {
     this.loadFromDisk();
     const keys: string[] = [];
     let changed = false;
@@ -296,11 +296,11 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
    *
    * @example
    * ```ts
-   * console.log(`Cache has ${cache.count()} entries`);
+   * console.log(`Cache has ${await cache.count()} entries`);
    * ```
    */
-  count(): number {
-    return this.keys().length;
+  async count(): Promise<number> {
+    return (await this.keys()).length;
   }
 
   /**
@@ -310,11 +310,11 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
    *
    * @example
    * ```ts
-   * const bytes = cache.size();
+   * const bytes = await cache.size();
    * console.log(`Cache size: ${(bytes / 1024).toFixed(2)} KB`);
    * ```
    */
-  size(): number {
+  async size(): Promise<number> {
     this.loadFromDisk();
     try {
       const stats = fs.statSync(this.filePath);
@@ -331,11 +331,11 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
    *
    * @example
    * ```ts
-   * const removed = cache.prune();
+   * const removed = await cache.prune();
    * console.log(`Removed ${removed} expired entries`);
    * ```
    */
-  prune(): number {
+  async prune(): Promise<number> {
     this.loadFromDisk();
     let removed = this.removedOnLoad;
     this.removedOnLoad = 0;
@@ -358,10 +358,10 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
    *
    * @example
    * ```ts
-   * const remaining = cache.ttl('session:abc'); // e.g., 3599
+   * const remaining = await cache.ttl('session:abc'); // e.g., 3599
    * ```
    */
-  ttl(key: string): number | null {
+  async ttl(key: string): Promise<number | null> {
     this.loadFromDisk();
     const entry = this.store.get(key);
     if (!entry || entry.value === undefined) return null;
@@ -387,10 +387,10 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
    *
    * @example
    * ```ts
-   * cache.touch('session:abc', 3600); // Extend for another hour
+   * await cache.touch('session:abc', 3600); // Extend for another hour
    * ```
    */
-  touch(key: string, seconds: number): boolean {
+  async touch(key: string, seconds: number): Promise<boolean> {
     this.loadFromDisk();
     const entry = this.store.get(key);
     if (!entry || entry.value === undefined) return false;
@@ -419,12 +419,12 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
    *
    * @example
    * ```ts
-   * cache.increment('page-views'); // Returns 1
-   * cache.increment('page-views'); // Returns 2
-   * cache.increment('score', 10); // Increment by 10
+   * await cache.increment('page-views'); // Returns 1
+   * await cache.increment('page-views'); // Returns 2
+   * await cache.increment('score', 10); // Increment by 10
    * ```
    */
-  increment(key: string, amount = 1): number {
+  async increment(key: string, amount = 1): Promise<number> {
     this.loadFromDisk();
     const entry = this.store.get(key);
     let currentValue = 0;
@@ -454,13 +454,13 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
    *
    * @example
    * ```ts
-   * cache.decrement('credits'); // Returns -1
-   * cache.put('balance', 100);
-   * cache.decrement('balance', 20); // Returns 80
+   * await cache.decrement('credits'); // Returns -1
+   * await cache.put('balance', 100);
+   * await cache.decrement('balance', 20); // Returns 80
    * ```
    */
-  decrement(key: string, amount = 1): number {
-    return this.increment(key, -amount);
+  async decrement(key: string, amount = 1): Promise<number> {
+    return await this.increment(key, -amount);
   }
 
   /**

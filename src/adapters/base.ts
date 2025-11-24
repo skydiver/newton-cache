@@ -2,6 +2,9 @@
  * Base interface that all cache adapters must implement.
  * Defines the standard cache operations with TTL support.
  *
+ * All methods are async and return Promises for consistency across adapters,
+ * enabling support for async backends like Redis, SQLite, etc.
+ *
  * @template V - The type of values stored in the cache
  */
 export interface CacheAdapter<V = unknown> {
@@ -12,7 +15,7 @@ export interface CacheAdapter<V = unknown> {
    * @param defaultValue - Optional default value or factory function to return if key is missing/expired
    * @returns The cached value, default value, or undefined if not found
    */
-  get(key: string, defaultValue?: V | (() => V)): V | undefined;
+  get(key: string, defaultValue?: V | (() => V | Promise<V>)): Promise<V | undefined>;
 
   /**
    * Stores a value in the cache with an optional TTL.
@@ -21,7 +24,7 @@ export interface CacheAdapter<V = unknown> {
    * @param value - The value to store
    * @param seconds - Optional TTL in seconds (omit for no expiration)
    */
-  put(key: string, value: V, seconds?: number): void;
+  put(key: string, value: V, seconds?: number): Promise<void>;
 
   /**
    * Checks if a key exists in the cache and has not expired.
@@ -29,7 +32,7 @@ export interface CacheAdapter<V = unknown> {
    * @param key - The cache key
    * @returns True if the key exists with a defined, non-expired value
    */
-  has(key: string): boolean;
+  has(key: string): Promise<boolean>;
 
   /**
    * Removes an item from the cache.
@@ -37,12 +40,12 @@ export interface CacheAdapter<V = unknown> {
    * @param key - The cache key
    * @returns True if the item existed and was removed, false otherwise
    */
-  forget(key: string): boolean;
+  forget(key: string): Promise<boolean>;
 
   /**
    * Clears all cached entries.
    */
-  flush(): void;
+  flush(): Promise<void>;
 
   /**
    * Stores a value permanently (alias for put without TTL).
@@ -50,7 +53,7 @@ export interface CacheAdapter<V = unknown> {
    * @param key - The cache key
    * @param value - The value to store
    */
-  forever(key: string, value: V): void;
+  forever(key: string, value: V): Promise<void>;
 
   /**
    * Stores a value only if the key doesn't already exist.
@@ -60,7 +63,7 @@ export interface CacheAdapter<V = unknown> {
    * @param seconds - Optional TTL in seconds
    * @returns True if the value was stored, false if key already exists
    */
-  add(key: string, value: V, seconds?: number): boolean;
+  add(key: string, value: V, seconds?: number): Promise<boolean>;
 
   /**
    * Retrieves a cached value and immediately deletes it (one-time read).
@@ -69,54 +72,54 @@ export interface CacheAdapter<V = unknown> {
    * @param defaultValue - Optional default value or factory function to return if key is missing/expired
    * @returns The cached value, default value, or undefined if not found
    */
-  pull(key: string, defaultValue?: V | (() => V)): V | undefined;
+  pull(key: string, defaultValue?: V | (() => V | Promise<V>)): Promise<V | undefined>;
 
   /**
    * Retrieves a value or stores the result of a factory function if missing/expired.
    *
    * @param key - The cache key
    * @param seconds - TTL in seconds (use Infinity for no expiration)
-   * @param factory - Function to generate the value if not cached
+   * @param factory - Sync or async function to generate the value if not cached
    * @returns The cached or newly generated value
    */
-  remember(key: string, seconds: number, factory: () => V): V;
+  remember(key: string, seconds: number, factory: () => V | Promise<V>): Promise<V>;
 
   /**
    * Retrieves a value or stores the result of a factory function permanently.
    *
    * @param key - The cache key
-   * @param factory - Function to generate the value if not cached
+   * @param factory - Sync or async function to generate the value if not cached
    * @returns The cached or newly generated value
    */
-  rememberForever(key: string, factory: () => V): V;
+  rememberForever(key: string, factory: () => V | Promise<V>): Promise<V>;
 
   /**
    * Returns all non-expired cache keys.
    *
    * @returns Array of all valid cache keys
    */
-  keys(): string[];
+  keys(): Promise<string[]>;
 
   /**
    * Returns the number of non-expired cache entries.
    *
    * @returns The count of valid cache entries
    */
-  count(): number;
+  count(): Promise<number>;
 
   /**
    * Returns the total size of all cache storage in bytes.
    *
    * @returns Total size in bytes
    */
-  size(): number;
+  size(): Promise<number>;
 
   /**
    * Removes all expired cache entries.
    *
    * @returns The number of expired entries removed
    */
-  prune(): number;
+  prune(): Promise<number>;
 
   /**
    * Gets the remaining time-to-live (TTL) for a cache key in seconds.
@@ -124,7 +127,7 @@ export interface CacheAdapter<V = unknown> {
    * @param key - The cache key
    * @returns The remaining TTL in seconds, or null if the key doesn't exist or has no expiration
    */
-  ttl(key: string): number | null;
+  ttl(key: string): Promise<number | null>;
 
   /**
    * Updates the TTL of an existing cache entry.
@@ -133,7 +136,7 @@ export interface CacheAdapter<V = unknown> {
    * @param seconds - New TTL in seconds from now
    * @returns True if the TTL was updated, false if the key doesn't exist
    */
-  touch(key: string, seconds: number): boolean;
+  touch(key: string, seconds: number): Promise<boolean>;
 
   /**
    * Increments a numeric cache value atomically.
@@ -142,7 +145,7 @@ export interface CacheAdapter<V = unknown> {
    * @param amount - The amount to increment by (default: 1)
    * @returns The new value after incrementing
    */
-  increment(key: string, amount?: number): number;
+  increment(key: string, amount?: number): Promise<number>;
 
   /**
    * Decrements a numeric cache value atomically.
@@ -151,7 +154,7 @@ export interface CacheAdapter<V = unknown> {
    * @param amount - The amount to decrement by (default: 1)
    * @returns The new value after decrementing
    */
-  decrement(key: string, amount?: number): number;
+  decrement(key: string, amount?: number): Promise<number>;
 
   /**
    * Retrieves multiple cached values by their keys.
@@ -161,11 +164,11 @@ export interface CacheAdapter<V = unknown> {
    *
    * @example
    * ```ts
-   * const result = cache.getMany(['user:1', 'user:2', 'user:3']);
+   * const result = await cache.getMany(['user:1', 'user:2', 'user:3']);
    * // { 'user:1': data1, 'user:2': undefined, 'user:3': data3 }
    * ```
    */
-  getMany(keys: string[]): Record<string, V | undefined>;
+  getMany(keys: string[]): Promise<Record<string, V | undefined>>;
 
   /**
    * Stores multiple key-value pairs in the cache with an optional TTL.
@@ -175,10 +178,10 @@ export interface CacheAdapter<V = unknown> {
    *
    * @example
    * ```ts
-   * cache.putMany({ 'key1': 'val1', 'key2': 'val2' }, 60);
+   * await cache.putMany({ 'key1': 'val1', 'key2': 'val2' }, 60);
    * ```
    */
-  putMany(items: Record<string, V>, seconds?: number): void;
+  putMany(items: Record<string, V>, seconds?: number): Promise<void>;
 
   /**
    * Removes multiple items from the cache.
@@ -188,10 +191,10 @@ export interface CacheAdapter<V = unknown> {
    *
    * @example
    * ```ts
-   * const removed = cache.forgetMany(['key1', 'key2', 'key3']); // Returns 2 if only 2 existed
+   * const removed = await cache.forgetMany(['key1', 'key2', 'key3']); // Returns 2 if only 2 existed
    * ```
    */
-  forgetMany(keys: string[]): number;
+  forgetMany(keys: string[]): Promise<number>;
 }
 
 /**
@@ -206,24 +209,24 @@ export interface CacheAdapter<V = unknown> {
  */
 export abstract class BaseCacheAdapter<V = unknown> implements CacheAdapter<V> {
   // Abstract primitive methods - each adapter must implement these
-  abstract get(key: string, defaultValue?: V | (() => V)): V | undefined;
-  abstract put(key: string, value: V, seconds?: number): void;
-  abstract forget(key: string): boolean;
-  abstract has(key: string): boolean;
-  abstract flush(): void;
-  abstract forever(key: string, value: V): void;
-  abstract add(key: string, value: V, seconds?: number): boolean;
-  abstract pull(key: string, defaultValue?: V | (() => V)): V | undefined;
-  abstract remember(key: string, seconds: number, factory: () => V): V;
-  abstract rememberForever(key: string, factory: () => V): V;
-  abstract keys(): string[];
-  abstract count(): number;
-  abstract size(): number;
-  abstract prune(): number;
-  abstract ttl(key: string): number | null;
-  abstract touch(key: string, seconds: number): boolean;
-  abstract increment(key: string, amount?: number): number;
-  abstract decrement(key: string, amount?: number): number;
+  abstract get(key: string, defaultValue?: V | (() => V | Promise<V>)): Promise<V | undefined>;
+  abstract put(key: string, value: V, seconds?: number): Promise<void>;
+  abstract forget(key: string): Promise<boolean>;
+  abstract has(key: string): Promise<boolean>;
+  abstract flush(): Promise<void>;
+  abstract forever(key: string, value: V): Promise<void>;
+  abstract add(key: string, value: V, seconds?: number): Promise<boolean>;
+  abstract pull(key: string, defaultValue?: V | (() => V | Promise<V>)): Promise<V | undefined>;
+  abstract remember(key: string, seconds: number, factory: () => V | Promise<V>): Promise<V>;
+  abstract rememberForever(key: string, factory: () => V | Promise<V>): Promise<V>;
+  abstract keys(): Promise<string[]>;
+  abstract count(): Promise<number>;
+  abstract size(): Promise<number>;
+  abstract prune(): Promise<number>;
+  abstract ttl(key: string): Promise<number | null>;
+  abstract touch(key: string, seconds: number): Promise<boolean>;
+  abstract increment(key: string, amount?: number): Promise<number>;
+  abstract decrement(key: string, amount?: number): Promise<number>;
 
   /**
    * Retrieves multiple cached values by their keys.
@@ -234,10 +237,10 @@ export abstract class BaseCacheAdapter<V = unknown> implements CacheAdapter<V> {
    * @param keys - Array of cache keys to retrieve
    * @returns Object mapping keys to their values (undefined for missing/expired keys)
    */
-  getMany(keys: string[]): Record<string, V | undefined> {
+  async getMany(keys: string[]): Promise<Record<string, V | undefined>> {
     const result: Record<string, V | undefined> = {};
     for (const key of keys) {
-      result[key] = this.get(key);
+      result[key] = await this.get(key);
     }
     return result;
   }
@@ -251,9 +254,9 @@ export abstract class BaseCacheAdapter<V = unknown> implements CacheAdapter<V> {
    * @param items - Object containing key-value pairs to store
    * @param seconds - Optional TTL in seconds (omit for no expiration)
    */
-  putMany(items: Record<string, V>, seconds?: number): void {
+  async putMany(items: Record<string, V>, seconds?: number): Promise<void> {
     for (const [key, value] of Object.entries(items)) {
-      this.put(key, value, seconds);
+      await this.put(key, value, seconds);
     }
   }
 
@@ -266,10 +269,10 @@ export abstract class BaseCacheAdapter<V = unknown> implements CacheAdapter<V> {
    * @param keys - Array of cache keys to remove
    * @returns The number of items that were actually removed
    */
-  forgetMany(keys: string[]): number {
+  async forgetMany(keys: string[]): Promise<number> {
     let removed = 0;
     for (const key of keys) {
-      if (this.forget(key)) {
+      if (await this.forget(key)) {
         removed++;
       }
     }
@@ -278,16 +281,18 @@ export abstract class BaseCacheAdapter<V = unknown> implements CacheAdapter<V> {
 
   /**
    * Helper method to resolve default values.
-   * If the default is a function, invokes it and returns the result.
+   * If the default is a function, invokes it and returns the result (awaiting if it's a Promise).
    * If the function throws, returns undefined.
    *
-   * @param defaultValue - Static value or factory function
+   * @param defaultValue - Static value, sync factory, or async factory function
    * @returns The resolved default value or undefined
    */
-  protected resolveDefault(defaultValue?: V | (() => V)): V | undefined {
+  protected async resolveDefault(
+    defaultValue?: V | (() => V | Promise<V>),
+  ): Promise<V | undefined> {
     if (typeof defaultValue === "function") {
       try {
-        return (defaultValue as () => V)();
+        return await (defaultValue as () => V | Promise<V>)();
       } catch {
         return undefined;
       }
