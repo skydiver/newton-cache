@@ -764,28 +764,19 @@ describe('FlatFileCache', () => {
   // L2: Key type validation
   it('put throws TypeError for non-string key', async () => {
     const { cache, cleanup } = setupCache();
-    await assert.rejects(
-      () => cache.put(42 as unknown as string, 'value'),
-      TypeError
-    );
+    await assert.rejects(() => cache.put(42 as unknown as string, 'value'), TypeError);
     cleanup();
   });
 
   it('get throws TypeError for non-string key', async () => {
     const { cache, cleanup } = setupCache();
-    await assert.rejects(
-      () => cache.get(null as unknown as string),
-      TypeError
-    );
+    await assert.rejects(() => cache.get(null as unknown as string), TypeError);
     cleanup();
   });
 
   it('has throws TypeError for non-string key', async () => {
     const { cache, cleanup } = setupCache();
-    await assert.rejects(
-      () => cache.has(undefined as unknown as string),
-      TypeError
-    );
+    await assert.rejects(() => cache.has(undefined as unknown as string), TypeError);
     cleanup();
   });
 
@@ -868,7 +859,10 @@ describe('FlatFileCache', () => {
 
   it('putMany with Infinity TTL stores without expiresAt', async () => {
     const { cache, filePath, cleanup } = setupCache();
-    await cache.putMany({ forever: 'yes' } as Record<string, unknown> as Record<string, string>, Number.POSITIVE_INFINITY);
+    await cache.putMany(
+      { forever: 'yes' } as Record<string, unknown> as Record<string, string>,
+      Number.POSITIVE_INFINITY
+    );
     const payload = readPayload(filePath);
     assert.equal(Object.hasOwn(payload.forever ?? {}, 'expiresAt'), false);
     cleanup();
@@ -876,10 +870,7 @@ describe('FlatFileCache', () => {
 
   it('putMany rejects invalid TTL before writing any key', async () => {
     const { cache, filePath, cleanup } = setupCache();
-    await assert.rejects(
-      () => cache.putMany({ a: '1', b: '2' }, -1),
-      RangeError
-    );
+    await assert.rejects(() => cache.putMany({ a: '1', b: '2' }, -1), RangeError);
     assert.equal(fs.existsSync(filePath), false);
     cleanup();
   });

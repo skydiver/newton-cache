@@ -3,8 +3,7 @@ import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { CachePayload, FlatFileCacheOptions } from '../types.js';
-import { assertStringKey, validateTTL } from './base.js';
-import { BaseCacheAdapter } from './base.js';
+import { assertStringKey, BaseCacheAdapter, validateTTL } from './base.js';
 
 const DEFAULT_CACHE_FILE = path.join(tmpdir(), 'newton-cache.json');
 const DEFAULT_FILE_MODE = 0o600;
@@ -529,7 +528,11 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
         fs.renameSync(tempPath, this.filePath);
       } catch (renameErr) {
         // Clean up temp file on rename failure to avoid leaking it.
-        try { fs.unlinkSync(tempPath); } catch { /* ignore */ }
+        try {
+          fs.unlinkSync(tempPath);
+        } catch {
+          /* ignore */
+        }
         throw renameErr;
       }
     } catch {

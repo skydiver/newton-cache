@@ -1293,28 +1293,19 @@ describe('FileCache', () => {
   // L2: Key type validation
   it('put throws TypeError for non-string key (number)', async () => {
     const { cache, cleanup } = setupCache();
-    await assert.rejects(
-      () => cache.put(42 as unknown as string, 'value'),
-      TypeError
-    );
+    await assert.rejects(() => cache.put(42 as unknown as string, 'value'), TypeError);
     cleanup();
   });
 
   it('get throws TypeError for non-string key (null)', async () => {
     const { cache, cleanup } = setupCache();
-    await assert.rejects(
-      () => cache.get(null as unknown as string),
-      TypeError
-    );
+    await assert.rejects(() => cache.get(null as unknown as string), TypeError);
     cleanup();
   });
 
   it('has throws TypeError for non-string key (undefined)', async () => {
     const { cache, cleanup } = setupCache();
-    await assert.rejects(
-      () => cache.has(undefined as unknown as string),
-      TypeError
-    );
+    await assert.rejects(() => cache.has(undefined as unknown as string), TypeError);
     cleanup();
   });
 

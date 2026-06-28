@@ -35,7 +35,13 @@ export interface FlatFileCacheOptions extends CacheOptions {
  * Configuration options for MemoryCache adapter
  */
 export interface MemoryCacheOptions extends CacheOptions {
-  // Reserved for future options (e.g., maxSize, evictionPolicy)
+  /**
+   * Maximum number of entries the cache may hold.
+   * Must be a positive integer. When the cache is full, the least-recently-used
+   * entry is evicted before each new key is inserted.
+   * Omit (or leave undefined) for an unbounded cache.
+   */
+  maxEntries?: number;
 }
 
 /**

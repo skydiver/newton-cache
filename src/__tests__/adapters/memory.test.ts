@@ -89,7 +89,10 @@ describe('MemoryCache', () => {
   it('remember calls factory exactly once on miss, zero times on hit', async () => {
     const cache = new MemoryCache();
     let calls = 0;
-    const factory = () => { calls++; return 'computed'; };
+    const factory = () => {
+      calls++;
+      return 'computed';
+    };
     await cache.remember('miss-key', 60, factory);
     assert.equal(calls, 1);
     await cache.remember('miss-key', 60, factory);
@@ -674,26 +677,17 @@ describe('MemoryCache', () => {
   // L2: Key type validation
   it('put throws TypeError for non-string key (number)', async () => {
     const cache = new MemoryCache();
-    await assert.rejects(
-      () => cache.put(42 as unknown as string, 'value'),
-      TypeError
-    );
+    await assert.rejects(() => cache.put(42 as unknown as string, 'value'), TypeError);
   });
 
   it('get throws TypeError for non-string key (null)', async () => {
     const cache = new MemoryCache();
-    await assert.rejects(
-      () => cache.get(null as unknown as string),
-      TypeError
-    );
+    await assert.rejects(() => cache.get(null as unknown as string), TypeError);
   });
 
   it('has throws TypeError for non-string key (undefined)', async () => {
     const cache = new MemoryCache();
-    await assert.rejects(
-      () => cache.has(undefined as unknown as string),
-      TypeError
-    );
+    await assert.rejects(() => cache.has(undefined as unknown as string), TypeError);
   });
 
   // Coverage: add() with no TTL (exercises the Infinity/null branch)
@@ -702,5 +696,113 @@ describe('MemoryCache', () => {
     assert.equal(await cache.add('no-ttl', 'value'), true);
     assert.equal(await cache.ttl('no-ttl'), null);
     assert.equal(await cache.get('no-ttl'), 'value');
+  });
+
+  // ── Bounded size + LRU eviction ─────────────────────────────────────────────
+
+  it('throws RangeError for maxEntries=0', () => {
+    assert.throws(() => new MemoryCache({ maxEntries: 0 }), RangeError);
+  });
+
+  it('throws RangeError for maxEntries=-1', () => {
+    assert.throws(() => new MemoryCache({ maxEntries: -1 }), RangeError);
+  });
+
+  it('throws RangeError for maxEntries=1.5 (float)', () => {
+    assert.throws(() => new MemoryCache({ maxEntries: 1.5 }), RangeError);
+  });
+
+  it('throws RangeError for maxEntries=NaN', () => {
+    assert.throws(() => new MemoryCache({ maxEntries: Number.NaN }), RangeError);
+  });
+
+  it('throws RangeError for maxEntries=Infinity', () => {
+    assert.throws(() => new MemoryCache({ maxEntries: Infinity }), RangeError);
+  });
+
+  it('enforces cap: insert N+1 keys → oldest is evicted, size stays at N', async () => {
+    const cache = new MemoryCache({ maxEntries: 3 });
+    await cache.put('a', 1);
+    await cache.put('b', 2);
+    await cache.put('c', 3);
+    await cache.put('d', 4); // should evict 'a'
+    assert.equal(await cache.has('a'), false);
+    assert.equal(await cache.has('b'), true);
+    assert.equal(await cache.has('c'), true);
+    assert.equal(await cache.has('d'), true);
+    assert.equal(await cache.count(), 3);
+  });
+
+  it('LRU: get bumps recency — least-recently-used is evicted', async () => {
+    const cache = new MemoryCache({ maxEntries: 2 });
+    await cache.put('a', 1);
+    await cache.put('b', 2);
+    await cache.get('a'); // bump 'a' to MRU, 'b' becomes LRU
+    await cache.put('c', 3); // should evict 'b'
+    assert.equal(await cache.has('a'), true);
+    assert.equal(await cache.has('b'), false);
+    assert.equal(await cache.has('c'), true);
+  });
+
+  it('update existing key at capacity does not evict', async () => {
+    const cache = new MemoryCache({ maxEntries: 2 });
+    await cache.put('a', 1);
+    await cache.put('b', 2);
+    await cache.put('a', 99); // update — no eviction
+    assert.equal(await cache.has('a'), true);
+    assert.equal(await cache.has('b'), true);
+    assert.equal(await cache.count(), 2);
+    assert.equal(await cache.get('a'), 99);
+  });
+
+  it('add respects cap: new key at capacity evicts oldest', async () => {
+    const cache = new MemoryCache({ maxEntries: 2 });
+    await cache.put('a', 1);
+    await cache.put('b', 2);
+    const stored = await cache.add('c', 3); // should evict 'a'
+    assert.equal(stored, true);
+    assert.equal(await cache.has('a'), false);
+    assert.equal(await cache.has('b'), true);
+    assert.equal(await cache.has('c'), true);
+  });
+
+  it('increment creating new key at capacity evicts oldest', async () => {
+    const cache = new MemoryCache<number>({ maxEntries: 2 });
+    await cache.put('a', 1);
+    await cache.put('b', 2);
+    await cache.increment('c'); // new key 'c' → evicts 'a'
+    assert.equal(await cache.has('a'), false);
+    assert.equal(await cache.has('b'), true);
+    assert.equal(await cache.get('c'), 1);
+  });
+
+  it('has does NOT change eviction order (peek-only)', async () => {
+    const cache = new MemoryCache({ maxEntries: 2 });
+    await cache.put('a', 1);
+    await cache.put('b', 2);
+    await cache.has('a'); // should NOT bump 'a' — 'a' stays LRU
+    await cache.put('c', 3); // should evict 'a' (still LRU)
+    assert.equal(await cache.has('a'), false);
+    assert.equal(await cache.has('b'), true);
+    assert.equal(await cache.has('c'), true);
+  });
+
+  it('keys does NOT change eviction order (peek-only)', async () => {
+    const cache = new MemoryCache({ maxEntries: 2 });
+    await cache.put('a', 1);
+    await cache.put('b', 2);
+    await cache.keys(); // should NOT change order
+    await cache.put('c', 3); // should evict 'a' (oldest)
+    assert.equal(await cache.has('a'), false);
+    assert.equal(await cache.has('b'), true);
+    assert.equal(await cache.has('c'), true);
+  });
+
+  it('backward-compat: no maxEntries → no eviction for 1000 entries', async () => {
+    const cache = new MemoryCache();
+    for (let i = 0; i < 1000; i++) {
+      await cache.put(`key-${i}`, i);
+    }
+    assert.equal(await cache.count(), 1000);
   });
 });

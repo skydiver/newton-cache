@@ -3,8 +3,7 @@ import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { CachePayload, FileCacheOptions } from '../types.js';
-import { assertStringKey, validateTTL } from './base.js';
-import { BaseCacheAdapter } from './base.js';
+import { assertStringKey, BaseCacheAdapter, validateTTL } from './base.js';
 
 const DEFAULT_CACHE_DIR = path.join(tmpdir(), 'node-cache');
 const MAX_KEY_LENGTH = 200; // Safe limit for encoded filenames across filesystems
@@ -116,13 +115,21 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
 
       // Delete before returning the value. Swallow cleanup errors so the value
       // is always returned even if the file can't be removed (race condition).
-      try { fs.unlinkSync(filename); } catch { /* ignore race-condition failures */ }
+      try {
+        fs.unlinkSync(filename);
+      } catch {
+        /* ignore race-condition failures */
+      }
       return parsed.value ?? undefined;
     } catch (err) {
       const error = err as NodeJS.ErrnoException;
       if (error.code === 'ENOENT') return await this.resolveDefault(defaultValue);
       // Other errors (directory entry, permissions) — try to clean up and return default
-      try { fs.unlinkSync(filename); } catch { /* ignore */ }
+      try {
+        fs.unlinkSync(filename);
+      } catch {
+        /* ignore */
+      }
       return await this.resolveDefault(defaultValue);
     }
   }
@@ -622,5 +629,4 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
     fs.writeFileSync(filename, payload, { encoding: 'utf8', mode: this.fileMode });
     return newValue;
   }
-
 }

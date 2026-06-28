@@ -1,6 +1,5 @@
 import type { CachePayload, MemoryCacheOptions } from '../types.js';
-import { assertStringKey, validateTTL } from './base.js';
-import { BaseCacheAdapter } from './base.js';
+import { assertStringKey, BaseCacheAdapter, validateTTL } from './base.js';
 
 /**
  * In-memory cache with TTL support.
@@ -17,20 +16,54 @@ import { BaseCacheAdapter } from './base.js';
  */
 export class MemoryCache<V = unknown> extends BaseCacheAdapter<V> {
   private readonly store: Map<string, CachePayload<V>>;
+  private readonly maxEntries?: number;
 
   /**
    * Creates a new MemoryCache instance.
    *
-   * @param options - Configuration options (reserved for future use)
+   * @param options - Configuration options
+   * @param options.maxEntries - Maximum number of entries (positive integer). When full,
+   *   the least-recently-used entry is evicted before each new key is inserted.
+   *   Omit for an unbounded cache.
+   * @throws {RangeError} If maxEntries is provided but is not a positive integer
    *
    * @example
    * ```ts
    * const cache = new MemoryCache<User>();
+   * const bounded = new MemoryCache<User>({ maxEntries: 500 });
    * ```
    */
-  constructor(_options: MemoryCacheOptions = {}) {
+  constructor(options: MemoryCacheOptions = {}) {
     super();
+    const { maxEntries } = options;
+    if (maxEntries !== undefined) {
+      if (!Number.isInteger(maxEntries) || maxEntries < 1) {
+        throw new RangeError(`maxEntries must be a positive integer (got ${maxEntries})`);
+      }
+      this.maxEntries = maxEntries;
+    }
     this.store = new Map();
+  }
+
+  /**
+   * Single write chokepoint — enforces LRU eviction and MRU positioning.
+   *
+   * Eviction fires only when inserting a NEW key while at capacity.
+   * Updating an existing key never evicts (size is unchanged).
+   * The entry always lands at the MRU end of the Map after this call.
+   */
+  private writeEntry(key: string, payload: CachePayload<V>): void {
+    if (
+      !this.store.has(key) &&
+      this.maxEntries !== undefined &&
+      this.store.size >= this.maxEntries
+    ) {
+      const oldest = this.store.keys().next().value;
+      if (oldest !== undefined) this.store.delete(oldest);
+    }
+    // delete + set so the (re)insertion lands at the MRU end of the Map.
+    this.store.delete(key);
+    this.store.set(key, payload);
   }
 
   /**
@@ -60,6 +93,10 @@ export class MemoryCache<V = unknown> extends BaseCacheAdapter<V> {
       this.store.delete(key);
       return await this.resolveDefault(defaultValue);
     }
+
+    // Bump to MRU on a valid hit.
+    this.store.delete(key);
+    this.store.set(key, entry);
 
     return entry.value ?? undefined;
   }
@@ -114,7 +151,7 @@ export class MemoryCache<V = unknown> extends BaseCacheAdapter<V> {
     const expiresAt =
       seconds == null || !Number.isFinite(seconds) ? undefined : Date.now() + seconds * 1000;
 
-    this.store.set(key, { value, expiresAt, key });
+    this.writeEntry(key, { value, expiresAt, key });
   }
 
   /**
@@ -182,7 +219,7 @@ export class MemoryCache<V = unknown> extends BaseCacheAdapter<V> {
     validateTTL(seconds);
     const expiresAt =
       seconds == null || !Number.isFinite(seconds) ? undefined : Date.now() + seconds * 1000;
-    this.store.set(key, { value, expiresAt, key });
+    this.writeEntry(key, { value, expiresAt, key });
     return true;
   }
 
@@ -366,7 +403,7 @@ export class MemoryCache<V = unknown> extends BaseCacheAdapter<V> {
     const newExpiresAt =
       seconds == null || !Number.isFinite(seconds) ? undefined : Date.now() + seconds * 1000;
 
-    this.store.set(key, {
+    this.writeEntry(key, {
       value: entry.value,
       expiresAt: newExpiresAt,
       key: entry.key,
@@ -410,8 +447,7 @@ export class MemoryCache<V = unknown> extends BaseCacheAdapter<V> {
     }
 
     const newValue = currentValue + amount;
-    this.store.set(key, { value: newValue as V, expiresAt, key });
+    this.writeEntry(key, { value: newValue as V, expiresAt, key });
     return newValue;
   }
-
 }
