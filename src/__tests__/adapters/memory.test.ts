@@ -805,4 +805,114 @@ describe('MemoryCache', () => {
     }
     assert.equal(await cache.count(), 1000);
   });
+
+  // ── Stampede (thundering-herd) protection ────────────────────────────────────
+
+  it('stampede: concurrent remember calls factory exactly once', async () => {
+    const cache = new MemoryCache();
+    let factoryCalls = 0;
+    const factory = () => {
+      factoryCalls++;
+      return new Promise<string>((resolve) => setImmediate(() => resolve('computed')));
+    };
+
+    const results = await Promise.all([
+      cache.remember('key', 60, factory),
+      cache.remember('key', 60, factory),
+      cache.remember('key', 60, factory),
+      cache.remember('key', 60, factory),
+      cache.remember('key', 60, factory),
+    ]);
+
+    assert.equal(factoryCalls, 1);
+    assert.ok(results.every((r) => r === 'computed'));
+  });
+
+  it('stampede: result is in cache after concurrent batch resolves', async () => {
+    const cache = new MemoryCache();
+    const factory = () =>
+      new Promise<string>((resolve) => setImmediate(() => resolve('cached-value')));
+
+    await Promise.all([
+      cache.remember('cache-check', 60, factory),
+      cache.remember('cache-check', 60, factory),
+    ]);
+
+    assert.equal(await cache.get('cache-check'), 'cached-value');
+  });
+
+  it('stampede: different keys run their factories independently', async () => {
+    const cache = new MemoryCache();
+    let calls = 0;
+    const makeFactory = (val: string) => () => {
+      calls++;
+      return new Promise<string>((resolve) => setImmediate(() => resolve(val)));
+    };
+
+    const [r1, r2, r3] = await Promise.all([
+      cache.remember('k1', 60, makeFactory('a')),
+      cache.remember('k2', 60, makeFactory('b')),
+      cache.remember('k3', 60, makeFactory('c')),
+    ]);
+
+    assert.equal(calls, 3);
+    assert.equal(r1, 'a');
+    assert.equal(r2, 'b');
+    assert.equal(r3, 'c');
+  });
+
+  it('stampede: factory rejection rejects all callers and clears in-flight entry', async () => {
+    const cache = new MemoryCache();
+    let calls = 0;
+    const failingFactory = () => {
+      calls++;
+      return Promise.reject<string>(new Error('factory failed'));
+    };
+
+    const settled = await Promise.allSettled([
+      cache.remember('fail-key', 60, failingFactory),
+      cache.remember('fail-key', 60, failingFactory),
+      cache.remember('fail-key', 60, failingFactory),
+    ]);
+
+    assert.equal(calls, 1);
+    assert.ok(settled.every((r) => r.status === 'rejected'));
+
+    // In-flight entry must be cleared so a subsequent call with a working factory succeeds
+    const recovered = await cache.remember('fail-key', 60, () => 'recovered');
+    assert.equal(recovered, 'recovered');
+  });
+
+  it('stampede: already-cached key skips factory and in-flight map entirely', async () => {
+    const cache = new MemoryCache();
+    await cache.put('warm', 'pre-cached', 60);
+    let factoryCalls = 0;
+
+    const result = await cache.remember('warm', 60, () => {
+      factoryCalls++;
+      return 'new-value';
+    });
+
+    assert.equal(result, 'pre-cached');
+    assert.equal(factoryCalls, 0);
+  });
+
+  it('stampede: rememberForever concurrent calls factory exactly once', async () => {
+    const cache = new MemoryCache();
+    let factoryCalls = 0;
+    const factory = () => {
+      factoryCalls++;
+      return new Promise<string>((resolve) => setImmediate(() => resolve('forever-val')));
+    };
+
+    const results = await Promise.all([
+      cache.rememberForever('forever-key', factory),
+      cache.rememberForever('forever-key', factory),
+      cache.rememberForever('forever-key', factory),
+    ]);
+
+    assert.equal(factoryCalls, 1);
+    assert.ok(results.every((r) => r === 'forever-val'));
+    assert.equal(await cache.ttl('forever-key'), null);
+  });
 });

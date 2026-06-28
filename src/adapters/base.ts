@@ -238,6 +238,16 @@ export interface CacheAdapter<V = unknown> {
  * @template V - The type of values stored in the cache
  */
 export abstract class BaseCacheAdapter<V = unknown> implements CacheAdapter<V> {
+  /**
+   * Tracks in-progress factory executions by cache key to deduplicate concurrent
+   * remember() calls (thundering-herd / cache-stampede protection).
+   *
+   * Scope note: deduplication is per-instance and per-process. It is fully effective
+   * for MemoryCache and prevents redundant I/O within a single process for file-based
+   * adapters. It does NOT provide cross-process locking.
+   */
+  private readonly inFlight = new Map<string, Promise<V>>();
+
   // Abstract primitive methods - each adapter must implement these
   abstract get(key: string, defaultValue?: V | (() => V | Promise<V>)): Promise<V | undefined>;
   abstract put(key: string, value: V, seconds?: number): Promise<void>;
@@ -260,6 +270,12 @@ export abstract class BaseCacheAdapter<V = unknown> implements CacheAdapter<V> {
    * TOCTOU window of the older has()+get() double-lookup pattern. An undefined result
    * from get() is treated as a cache miss (key absent or expired).
    *
+   * Stampede protection: concurrent calls for the same key while the factory is running
+   * all await the same in-flight Promise — the factory is invoked exactly once.
+   * On rejection, the in-flight entry is cleared so a subsequent call can retry.
+   * Deduplication is per-instance/per-process (effective for MemoryCache; within-process
+   * for file adapters; not a cross-process lock).
+   *
    * @param key - The cache key
    * @param seconds - TTL in seconds (use Infinity for no expiration)
    * @param factory - Sync or async function to generate the value if not cached
@@ -268,9 +284,23 @@ export abstract class BaseCacheAdapter<V = unknown> implements CacheAdapter<V> {
   async remember(key: string, seconds: number, factory: () => V | Promise<V>): Promise<V> {
     const existing = await this.get(key);
     if (existing !== undefined) return existing;
-    const value = await factory();
-    await this.put(key, value, seconds);
-    return value;
+
+    // Stampede protection: if a factory is already running for this key, await it.
+    const pending = this.inFlight.get(key);
+    if (pending !== undefined) return pending;
+
+    // No await between inFlight.get() and inFlight.set() — check-and-register is synchronous.
+    const promise = (async () => {
+      const value = await factory();
+      await this.put(key, value, seconds);
+      return value;
+    })();
+    this.inFlight.set(key, promise);
+    try {
+      return await promise;
+    } finally {
+      this.inFlight.delete(key);
+    }
   }
 
   /**

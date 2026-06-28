@@ -1384,4 +1384,47 @@ describe('FileCache', () => {
     }
     cleanup();
   });
+
+  // ── Stampede (thundering-herd) protection ────────────────────────────────────
+
+  it('stampede: concurrent remember calls factory exactly once (file-based)', async () => {
+    const { cache, cleanup } = setupCache();
+    let factoryCalls = 0;
+    const factory = () => {
+      factoryCalls++;
+      return new Promise<string>((resolve) => setImmediate(() => resolve('file-computed')));
+    };
+
+    const results = await Promise.all([
+      cache.remember('sf-key', 60, factory),
+      cache.remember('sf-key', 60, factory),
+      cache.remember('sf-key', 60, factory),
+    ]);
+
+    assert.equal(factoryCalls, 1);
+    assert.ok(results.every((r) => r === 'file-computed'));
+    assert.equal(await cache.get('sf-key'), 'file-computed');
+    cleanup();
+  });
+
+  it('stampede: factory rejection clears in-flight entry (file-based)', async () => {
+    const { cache, cleanup } = setupCache();
+    let calls = 0;
+    const failingFactory = () => {
+      calls++;
+      return Promise.reject<string>(new Error('file factory failed'));
+    };
+
+    const settled = await Promise.allSettled([
+      cache.remember('file-fail', 60, failingFactory),
+      cache.remember('file-fail', 60, failingFactory),
+    ]);
+
+    assert.equal(calls, 1);
+    assert.ok(settled.every((r) => r.status === 'rejected'));
+
+    const recovered = await cache.remember('file-fail', 60, () => 'file-recovered');
+    assert.equal(recovered, 'file-recovered');
+    cleanup();
+  });
 });

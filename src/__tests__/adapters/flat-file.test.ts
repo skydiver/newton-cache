@@ -874,4 +874,26 @@ describe('FlatFileCache', () => {
     assert.equal(fs.existsSync(filePath), false);
     cleanup();
   });
+
+  // ── Stampede (thundering-herd) protection ────────────────────────────────────
+
+  it('stampede: concurrent remember calls factory exactly once (flat-file-based)', async () => {
+    const { cache, cleanup } = setupCache();
+    let factoryCalls = 0;
+    const factory = () => {
+      factoryCalls++;
+      return new Promise<string>((resolve) => setImmediate(() => resolve('flat-computed')));
+    };
+
+    const results = await Promise.all([
+      cache.remember('sf-flat', 60, factory),
+      cache.remember('sf-flat', 60, factory),
+      cache.remember('sf-flat', 60, factory),
+    ]);
+
+    assert.equal(factoryCalls, 1);
+    assert.ok(results.every((r) => r === 'flat-computed'));
+    assert.equal(await cache.get('sf-flat'), 'flat-computed');
+    cleanup();
+  });
 });
