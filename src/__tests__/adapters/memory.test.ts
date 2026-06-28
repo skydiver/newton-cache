@@ -1039,23 +1039,25 @@ describe('MemoryCache', () => {
       // We cast via unknown to avoid type-widening issues with the overloaded setInterval signature.
       const realSetInterval = globalThis.setInterval;
       let unrefCalled = false;
-      (globalThis as unknown as { setInterval(cb: () => void, ms: number): NodeJS.Timeout }).setInterval =
-        (cb: () => void, ms: number): NodeJS.Timeout => {
-          const timer = realSetInterval(cb, ms);
-          const origUnref = timer.unref.bind(timer);
-          timer.unref = () => {
-            unrefCalled = true;
-            return origUnref();
-          };
-          return timer;
+      (
+        globalThis as unknown as { setInterval(cb: () => void, ms: number): NodeJS.Timeout }
+      ).setInterval = (cb: () => void, ms: number): NodeJS.Timeout => {
+        const timer = realSetInterval(cb, ms);
+        const origUnref = timer.unref.bind(timer);
+        timer.unref = () => {
+          unrefCalled = true;
+          return origUnref();
         };
+        return timer;
+      };
       const cache = new MemoryCache();
       try {
         cache.startAutoPrune(3600);
         assert.equal(unrefCalled, true, 'expected unref() to be called on the interval timer');
       } finally {
         cache.stopAutoPrune();
-        (globalThis as unknown as { setInterval: typeof setInterval }).setInterval = realSetInterval;
+        (globalThis as unknown as { setInterval: typeof setInterval }).setInterval =
+          realSetInterval;
       }
     });
 

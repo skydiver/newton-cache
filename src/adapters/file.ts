@@ -2,8 +2,8 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import type { CachePayload, FileCacheOptions } from '../types.js';
-import { assertStringKey, BaseCacheAdapter, validateTTL } from './base.js';
+import type { FileCacheOptions } from '../types.js';
+import { assertStringKey, BaseCacheAdapter, isCachePayload, validateTTL } from './base.js';
 
 const DEFAULT_CACHE_DIR = path.join(tmpdir(), 'node-cache');
 const MAX_KEY_LENGTH = 200; // Safe limit for encoded filenames across filesystems
@@ -68,8 +68,9 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
     const filename = this.pathForKey(key);
     try {
       const content = fs.readFileSync(filename, 'utf8');
-      const parsed = JSON.parse(content) as CachePayload<V> | null;
-      if (!parsed) return await this.resolveDefault(defaultValue);
+      const rawParsed: unknown = JSON.parse(content);
+      if (!isCachePayload<V>(rawParsed)) return await this.resolveDefault(defaultValue);
+      const parsed = rawParsed;
 
       if (parsed.expiresAt != null && parsed.expiresAt <= Date.now()) {
         fs.unlinkSync(filename);
@@ -101,12 +102,13 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
     const filename = this.pathForKey(key);
     try {
       const content = fs.readFileSync(filename, 'utf8');
-      const parsed = JSON.parse(content) as CachePayload<V> | null;
+      const rawParsed: unknown = JSON.parse(content);
 
-      if (!parsed) {
+      if (!isCachePayload<V>(rawParsed)) {
         fs.unlinkSync(filename);
         return await this.resolveDefault(defaultValue);
       }
+      const parsed = rawParsed;
 
       if (parsed.expiresAt != null && parsed.expiresAt <= Date.now()) {
         fs.unlinkSync(filename);
@@ -237,13 +239,14 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
       // File exists — check if it's expired or invalid, and overwrite if so.
       try {
         const content = fs.readFileSync(filename, 'utf8');
-        const parsed = JSON.parse(content) as CachePayload<V> | null;
+        const rawParsed: unknown = JSON.parse(content);
 
-        if (!parsed) {
-          // Null / corrupt payload — overwrite
+        if (!isCachePayload<V>(rawParsed)) {
+          // Null / invalid payload — overwrite
           await this.put(key, value, seconds);
           return true;
         }
+        const parsed = rawParsed;
 
         if (parsed.expiresAt != null && parsed.expiresAt <= Date.now()) {
           // Expired — overwrite
@@ -326,8 +329,9 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
     const filename = this.pathForKey(key);
     try {
       const content = fs.readFileSync(filename, 'utf8');
-      const parsed = JSON.parse(content) as CachePayload<V> | null;
-      if (!parsed) return false;
+      const rawParsed: unknown = JSON.parse(content);
+      if (!isCachePayload<V>(rawParsed)) return false;
+      const parsed = rawParsed;
 
       if (parsed.expiresAt != null && parsed.expiresAt <= Date.now()) {
         fs.unlinkSync(filename);
@@ -366,9 +370,10 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
 
         try {
           const content = fs.readFileSync(filename, 'utf8');
-          const parsed = JSON.parse(content) as CachePayload<V> | null;
+          const rawParsed: unknown = JSON.parse(content);
 
-          if (!parsed || parsed.value === undefined) continue;
+          if (!isCachePayload<V>(rawParsed) || rawParsed.value === undefined) continue;
+          const parsed = rawParsed;
 
           // Remove expired entries
           if (parsed.expiresAt != null && parsed.expiresAt <= Date.now()) {
@@ -451,14 +456,15 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
 
         try {
           const content = fs.readFileSync(filename, 'utf8');
-          const parsed = JSON.parse(content) as CachePayload<V> | null;
+          const rawParsed: unknown = JSON.parse(content);
 
-          // Remove if expired or invalid
-          if (!parsed || parsed.value === undefined) {
+          // Remove if invalid, expired, or missing value
+          if (!isCachePayload<V>(rawParsed) || rawParsed.value === undefined) {
             fs.unlinkSync(filename);
             removed++;
             continue;
           }
+          const parsed = rawParsed;
 
           if (parsed.expiresAt != null && parsed.expiresAt <= Date.now()) {
             fs.unlinkSync(filename);
@@ -497,9 +503,10 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
     const filename = this.pathForKey(key);
     try {
       const content = fs.readFileSync(filename, 'utf8');
-      const parsed = JSON.parse(content) as CachePayload<V> | null;
+      const rawParsed: unknown = JSON.parse(content);
 
-      if (!parsed || parsed.value === undefined) return null;
+      if (!isCachePayload<V>(rawParsed) || rawParsed.value === undefined) return null;
+      const parsed = rawParsed;
 
       // No expiration set
       if (parsed.expiresAt == null) return null;
@@ -539,9 +546,10 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
     const filename = this.pathForKey(key);
     try {
       const content = fs.readFileSync(filename, 'utf8');
-      const parsed = JSON.parse(content) as CachePayload<V> | null;
+      const rawParsed: unknown = JSON.parse(content);
 
-      if (!parsed || parsed.value === undefined) return false;
+      if (!isCachePayload<V>(rawParsed) || rawParsed.value === undefined) return false;
+      const parsed = rawParsed;
 
       // Check if already expired
       if (parsed.expiresAt != null && parsed.expiresAt <= Date.now()) {
@@ -592,19 +600,15 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
     // Try to read existing value
     try {
       const content = fs.readFileSync(filename, 'utf8');
-      const parsed = JSON.parse(content) as {
-        value: unknown;
-        expiresAt?: number;
-        key?: string;
-      } | null;
+      const rawParsed: unknown = JSON.parse(content);
 
-      if (parsed) {
+      if (isCachePayload<V>(rawParsed)) {
         // Only use existing value if it's a number
-        if (typeof parsed.value === 'number') {
-          currentValue = parsed.value;
+        if (typeof rawParsed.value === 'number') {
+          currentValue = rawParsed.value;
         }
-        expiresAt = parsed.expiresAt;
-        storedKey = parsed.key;
+        expiresAt = rawParsed.expiresAt;
+        storedKey = rawParsed.key;
 
         // Check if expired
         if (expiresAt != null && expiresAt <= Date.now()) {

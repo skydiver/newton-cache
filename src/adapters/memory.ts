@@ -447,6 +447,10 @@ export class MemoryCache<V = unknown> extends BaseCacheAdapter<V> {
     }
 
     const newValue = currentValue + amount;
+    // `as V`: increment is a numeric operation on a generically-typed slot. The result
+    // is always a number; callers of a generic cache know the slot holds a numeric value.
+    // Removing this assertion would require `V extends number` on the class, which is
+    // a breaking API change. `as any` is not used — the assertion is the narrowest sound cast.
     this.writeEntry(key, { value: newValue as V, expiresAt, key });
     return newValue;
   }

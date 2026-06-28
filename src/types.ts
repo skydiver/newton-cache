@@ -1,14 +1,7 @@
 /**
- * Base cache configuration options
- */
-export interface CacheOptions {
-  [key: string]: unknown;
-}
-
-/**
  * Configuration options for FileCache adapter
  */
-export interface FileCacheOptions extends CacheOptions {
+export interface FileCacheOptions {
   /** Optional custom cache directory path. Defaults to OS temp directory. */
   cachePath?: string;
   /**
@@ -21,7 +14,7 @@ export interface FileCacheOptions extends CacheOptions {
 /**
  * Configuration options for FlatFileCache adapter
  */
-export interface FlatFileCacheOptions extends CacheOptions {
+export interface FlatFileCacheOptions {
   /** Path to the flat cache file. Defaults to `<os tmp>/newton-cache.json`. */
   filePath?: string;
   /**
@@ -34,7 +27,7 @@ export interface FlatFileCacheOptions extends CacheOptions {
 /**
  * Configuration options for MemoryCache adapter
  */
-export interface MemoryCacheOptions extends CacheOptions {
+export interface MemoryCacheOptions {
   /**
    * Maximum number of entries the cache may hold.
    * Must be a positive integer. When the cache is full, the least-recently-used

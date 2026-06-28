@@ -34,7 +34,10 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   );
 
   console.log('   Factory was called:', factoryCalls, 'time(s)');
-  console.log('   All callers got the same object:', results.every((r) => r === results[0]));
+  console.log(
+    '   All callers got the same object:',
+    results.every((r) => r === results[0])
+  );
   console.log('   Result:', results[0]);
   console.log();
 
@@ -58,7 +61,10 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     cache.remember('flaky', 60, flaky),
     cache.remember('flaky', 60, flaky),
   ]).then((settled) => {
-    console.log('   First batch outcomes:', settled.map((s) => s.status));
+    console.log(
+      '   First batch outcomes:',
+      settled.map((s) => s.status)
+    );
   });
 
   const recovered = await cache.remember('flaky', 60, flaky);

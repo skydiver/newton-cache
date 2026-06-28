@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { CachePayload, FlatFileCacheOptions } from '../types.js';
-import { assertStringKey, BaseCacheAdapter, validateTTL } from './base.js';
+import { assertStringKey, BaseCacheAdapter, isCachePayload, validateTTL } from './base.js';
 
 const DEFAULT_CACHE_FILE = path.join(tmpdir(), 'newton-cache.json');
 const DEFAULT_FILE_MODE = 0o600;
@@ -406,6 +406,10 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
     }
 
     const newValue = currentValue + amount;
+    // `as V`: increment is a numeric operation on a generically-typed slot. The result
+    // is always a number; callers of a generic cache know the slot holds a numeric value.
+    // Removing this assertion would require `V extends number` on the class, which is
+    // a breaking API change. `as any` is not used — the assertion is the narrowest sound cast.
     this.store.set(key, { value: newValue as V, expiresAt, key: entry?.key ?? key });
     this.saveToDisk();
     return newValue;
@@ -457,21 +461,20 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
     try {
       if (!dirty && !content.trim()) return;
 
-      const parsed = JSON.parse(content) as Record<string, CachePayload<V>> | null;
-      if (!parsed || typeof parsed !== 'object') {
+      const rawParsed: unknown = JSON.parse(content);
+      // Guard: outer structure must be a non-null, non-array object.
+      if (rawParsed === null || typeof rawParsed !== 'object' || Array.isArray(rawParsed)) {
         dirty = true;
         return;
       }
+      // Narrowed to non-null object; cast to a string-keyed map for iteration.
+      // Safety: the null/array/non-object cases are eliminated above.
+      const parsed = rawParsed as Record<string, unknown>;
 
       const now = Date.now();
       for (const [key, entry] of Object.entries(parsed)) {
-        if (!entry || typeof entry !== 'object') {
-          dirty = true;
-          this.removedOnLoad++;
-          continue;
-        }
-
-        if (entry.value === undefined) {
+        // Validate each entry's shape; skip (treat as absent) if malformed.
+        if (!isCachePayload<V>(entry) || entry.value === undefined) {
           dirty = true;
           this.removedOnLoad++;
           continue;

@@ -1,3 +1,5 @@
+import type { CachePayload } from '../types.js';
+
 /**
  * Validates a TTL value, throwing RangeError for invalid values.
  *
@@ -243,6 +245,28 @@ export interface CacheAdapter<V = unknown> {
 }
 
 /**
+ * Runtime type guard that verifies an unknown value has the shape of CachePayload<V>.
+ *
+ * Validated conditions:
+ *  - non-null object (not an array)
+ *  - owns a `value` property of any type (null is a legitimate stored value)
+ *  - `expiresAt`, if present, is a number
+ *  - `key`, if present, is a string
+ *
+ * The type of `value` itself is NOT validated — it is generic (V) and callers
+ * are responsible for further narrowing when needed (e.g. typeof value === 'number').
+ */
+export function isCachePayload<V>(data: unknown): data is CachePayload<V> {
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) return false;
+  // Narrowed to non-null, non-array object above; cast to indexed type for property access.
+  const obj = data as Record<string, unknown>;
+  if (!Object.hasOwn(obj, 'value')) return false;
+  if ('expiresAt' in obj && typeof obj['expiresAt'] !== 'number') return false;
+  if ('key' in obj && typeof obj['key'] !== 'string') return false;
+  return true;
+}
+
+/**
  * Abstract base class that provides shared implementations for cache adapters.
  * Implements common batch operations and helper methods that delegate to primitive operations.
  *
@@ -470,7 +494,9 @@ export abstract class BaseCacheAdapter<V = unknown> implements CacheAdapter<V> {
     this.pruneTimer = setInterval(() => {
       // prune() is async; the rejection is intentionally swallowed so an unhandled
       // rejection never crashes the host process from a background fire-and-forget timer.
-      void Promise.resolve(this.prune()).catch(() => {});
+      void Promise.resolve(this.prune()).catch(() => {
+        /* intentionally ignored — background prune failures must not crash the host */
+      });
     }, intervalSeconds * 1000);
     this.pruneTimer.unref();
   }

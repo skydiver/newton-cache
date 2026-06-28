@@ -14,7 +14,6 @@ export { FlatFileCache } from './adapters/flat-file.js';
 export { MemoryCache } from './adapters/memory.js';
 // Export type definitions
 export type {
-  CacheOptions,
   CachePayload,
   FileCacheOptions,
   FlatFileCacheOptions,

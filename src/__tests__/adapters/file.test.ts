@@ -1443,4 +1443,59 @@ describe('FileCache', () => {
     assert.doesNotThrow(() => cache.stopAutoPrune());
     cleanup();
   });
+
+  // ── isCachePayload guard — shape-invalid payloads (Cleanup 2) ───────────────
+
+  it('get returns default for array-shaped payload (valid JSON, wrong shape)', async () => {
+    const { cache, cleanup, dir } = setupCache();
+    const key = 'array-payload';
+    const filename = path.join(dir, encodeURIComponent(key));
+    fs.writeFileSync(filename, '["a","b"]', 'utf8');
+    assert.equal(await cache.get(key, 'default'), 'default');
+    cleanup();
+  });
+
+  it('get returns default for JSON-string payload (valid JSON, non-object)', async () => {
+    const { cache, cleanup, dir } = setupCache();
+    const key = 'string-payload';
+    const filename = path.join(dir, encodeURIComponent(key));
+    fs.writeFileSync(filename, '"hello"', 'utf8');
+    assert.equal(await cache.get(key, 'default'), 'default');
+    cleanup();
+  });
+
+  it('get returns default for payload where key field is not a string', async () => {
+    const { cache, cleanup, dir } = setupCache();
+    const key = 'bad-key-field';
+    const filename = path.join(dir, encodeURIComponent(key));
+    fs.writeFileSync(filename, JSON.stringify({ value: 'data', key: 123 }), 'utf8');
+    assert.equal(await cache.get(key, 'default'), 'default');
+    cleanup();
+  });
+
+  it('has returns false for payload with non-number expiresAt', async () => {
+    const { cache, cleanup, dir } = setupCache();
+    const key = 'bad-expires';
+    const filename = path.join(dir, encodeURIComponent(key));
+    fs.writeFileSync(
+      filename,
+      JSON.stringify({ value: 'data', expiresAt: 'not-a-number' }),
+      'utf8'
+    );
+    assert.equal(await cache.has(key), false);
+    cleanup();
+  });
+
+  it('ttl returns null for payload with non-number expiresAt', async () => {
+    const { cache, cleanup, dir } = setupCache();
+    const key = 'bad-expires-ttl';
+    const filename = path.join(dir, encodeURIComponent(key));
+    fs.writeFileSync(
+      filename,
+      JSON.stringify({ value: 'data', expiresAt: 'not-a-number' }),
+      'utf8'
+    );
+    assert.equal(await cache.ttl(key), null);
+    cleanup();
+  });
 });

@@ -896,4 +896,32 @@ describe('FlatFileCache', () => {
     assert.equal(await cache.get('sf-flat'), 'flat-computed');
     cleanup();
   });
+
+  // ── isCachePayload guard — shape-invalid per-entry payloads (Cleanup 2) ─────
+
+  it('loadFromDisk ignores entry with non-number expiresAt while valid entries still load', async () => {
+    const { filePath, cleanup } = setupCache();
+    writePayload(filePath, {
+      good: { value: 'ok', key: 'good' },
+      bad: { value: 'data', expiresAt: 'not-a-number', key: 'bad' },
+    });
+    const freshCache = new FlatFileCache({ filePath });
+    assert.equal(await freshCache.get('good'), 'ok');
+    assert.equal(await freshCache.get('bad'), undefined);
+    cleanup();
+  });
+
+  it('loadFromDisk ignores array-shaped per-entry value while valid entries still load', async () => {
+    const { filePath, cleanup } = setupCache();
+    // Write raw JSON where one entry is an array (bypasses TypeScript types)
+    fs.writeFileSync(
+      filePath,
+      JSON.stringify({ good: { value: 'ok', key: 'good' }, bad: ['a', 'b'] }),
+      'utf8'
+    );
+    const freshCache = new FlatFileCache({ filePath });
+    assert.equal(await freshCache.get('good'), 'ok');
+    assert.equal(await freshCache.get('bad'), undefined);
+    cleanup();
+  });
 });

@@ -45,7 +45,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   console.log('Behavior notes:');
   console.log('   - startAutoPrune is idempotent: calling again replaces the timer');
   console.log('   - throws RangeError if the interval is not a positive finite number');
-  console.log('   - the timer is unref\'d, so it will not block process exit');
+  console.log("   - the timer is unref'd, so it will not block process exit");
   console.log();
 
   await cache.flush();
