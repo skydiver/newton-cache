@@ -819,6 +819,30 @@ describe('FlatFileCache', () => {
     cleanup();
   });
 
+  // Coverage: saveToDisk swallows a failing temp-file cleanup after a rename failure
+  it('saveToDisk ignores unlink failure during temp-file cleanup', async () => {
+    const { cache, cleanup } = setupCache();
+    const origRename = fs.renameSync;
+    const origUnlink = fs.unlinkSync;
+    // Force rename to fail (enter cleanup branch) and unlink to fail (enter inner catch).
+    fs.renameSync = () => {
+      throw new Error('rename failed');
+    };
+    fs.unlinkSync = () => {
+      throw new Error('unlink failed');
+    };
+    try {
+      // saveToDisk must not throw even though both rename and cleanup-unlink fail.
+      await cache.put('key', 'value');
+      // Value remains available in memory despite the failed disk write.
+      assert.equal(await cache.get('key'), 'value');
+    } finally {
+      fs.renameSync = origRename;
+      fs.unlinkSync = origUnlink;
+    }
+    cleanup();
+  });
+
   // putMany override tests
   it('putMany performs a single disk write for N keys', async () => {
     const { cache, filePath, cleanup } = setupCache();
