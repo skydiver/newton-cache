@@ -13,7 +13,10 @@ import { FileCache } from '../dist/index.js';
 (async () => {
   console.log('=== FileCache Basic Example ===\n');
 
-  // Create a new FileCache instance
+  // Create a new FileCache instance.
+  // Cache files default to mode 0o600 and the directory to 0o700 so other
+  // local users can't read cached values. Pass `mode` to override, e.g.:
+  //   new FileCache({ cachePath: '/var/tmp/my-cache', mode: 0o644 })
   const cache = new FileCache();
 
   // 1. Store a value without TTL (persists until manually deleted)
