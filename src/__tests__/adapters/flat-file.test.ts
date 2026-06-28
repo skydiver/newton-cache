@@ -675,4 +675,156 @@ describe('FlatFileCache', () => {
     assert.equal(payload.testkey?.key, 'testkey');
     cleanup();
   });
+
+  // ── Security fixes ──────────────────────────────────────────────────────────
+
+  // M3: TTL validation
+  it('put throws RangeError for NaN TTL', async () => {
+    const { cache, cleanup } = setupCache();
+    await assert.rejects(() => cache.put('key', 'value', Number.NaN), RangeError);
+    cleanup();
+  });
+
+  it('put throws RangeError for negative TTL', async () => {
+    const { cache, cleanup } = setupCache();
+    await assert.rejects(() => cache.put('key', 'value', -1), RangeError);
+    cleanup();
+  });
+
+  it('put accepts Infinity TTL (stores without expiry)', async () => {
+    const { cache, cleanup } = setupCache();
+    await cache.put('inf-key', 'value', Infinity);
+    assert.equal(await cache.get('inf-key'), 'value');
+    assert.equal(await cache.ttl('inf-key'), null);
+    cleanup();
+  });
+
+  it('put accepts zero TTL without throwing', async () => {
+    const { cache, cleanup } = setupCache();
+    await assert.doesNotReject(() => cache.put('zero-key', 'value', 0));
+    cleanup();
+  });
+
+  it('touch throws RangeError for negative seconds', async () => {
+    const { cache, cleanup } = setupCache();
+    await cache.put('key', 'value');
+    await assert.rejects(() => cache.touch('key', -1), RangeError);
+    cleanup();
+  });
+
+  it('touch throws RangeError for NaN seconds', async () => {
+    const { cache, cleanup } = setupCache();
+    await cache.put('key', 'value');
+    await assert.rejects(() => cache.touch('key', Number.NaN), RangeError);
+    cleanup();
+  });
+
+  // H1: add() is atomic (synchronous check-and-set in memory)
+  it('add succeeds when existing entry is expired', async () => {
+    const { filePath, cleanup } = setupCache();
+    writePayload(filePath, {
+      'exp-key': { value: 'old', expiresAt: Date.now() - 1000, key: 'exp-key' },
+    });
+    const freshCache = new FlatFileCache({ filePath });
+    assert.equal(await freshCache.add('exp-key', 'new', 10), true);
+    assert.equal(await freshCache.get('exp-key'), 'new');
+    cleanup();
+  });
+
+  // M1: File permissions (POSIX only)
+  it('writes cache file with mode 0o600', async () => {
+    if (process.platform === 'win32') return;
+    const { cache, filePath, cleanup } = setupCache();
+    await cache.put('mode-test', 'value');
+    const stats = fs.statSync(filePath);
+    assert.equal(stats.mode & 0o777, 0o600);
+    cleanup();
+  });
+
+  // M2: loadFromDisk treats a non-ENOENT read error as corrupt without throwing
+  it('does not throw when the cache file path is unreadable', async () => {
+    if (process.platform === 'win32') return;
+    const { dir, filePath, cleanup } = setupCache();
+    // Replace the cache file with a directory so readFileSync throws EISDIR (not ENOENT).
+    fs.mkdirSync(filePath);
+    const cache = new FlatFileCache({ filePath: path.join(dir, 'cache.json') });
+    assert.equal(await cache.get('anything'), undefined);
+    cleanup();
+  });
+
+  // M4: getMany prototype pollution (from BaseCacheAdapter)
+  it('getMany with __proto__ key does not pollute Object.prototype', async () => {
+    const { cache, cleanup } = setupCache();
+    await cache.put('__proto__', { isAdmin: true } as unknown as string);
+    await cache.getMany(['__proto__']);
+    assert.equal((Object.prototype as Record<string, unknown>).isAdmin, undefined);
+    cleanup();
+  });
+
+  // L2: Key type validation
+  it('put throws TypeError for non-string key', async () => {
+    const { cache, cleanup } = setupCache();
+    await assert.rejects(
+      () => cache.put(42 as unknown as string, 'value'),
+      TypeError
+    );
+    cleanup();
+  });
+
+  it('get throws TypeError for non-string key', async () => {
+    const { cache, cleanup } = setupCache();
+    await assert.rejects(
+      () => cache.get(null as unknown as string),
+      TypeError
+    );
+    cleanup();
+  });
+
+  it('has throws TypeError for non-string key', async () => {
+    const { cache, cleanup } = setupCache();
+    await assert.rejects(
+      () => cache.has(undefined as unknown as string),
+      TypeError
+    );
+    cleanup();
+  });
+
+  // L4: Random temp file (saveToDisk must not leave predictable .tmp artifact)
+  it('saveToDisk leaves no predictable .tmp file after successful write', async () => {
+    const { cache, filePath, cleanup } = setupCache();
+    await cache.put('key', 'value');
+    assert.equal(fs.existsSync(`${filePath}.tmp`), false);
+    const payload = readPayload(filePath);
+    assert.equal(payload.key?.value, 'value');
+    cleanup();
+  });
+
+  // Coverage: add() with no TTL (exercises the Infinity/null branch in the ternary)
+  it('add stores without TTL when seconds is omitted', async () => {
+    const { cache, cleanup } = setupCache();
+    assert.equal(await cache.add('no-ttl', 'value'), true);
+    assert.equal(await cache.ttl('no-ttl'), null);
+    assert.equal(await cache.get('no-ttl'), 'value');
+    cleanup();
+  });
+
+  // Coverage: saveToDisk cleans up temp file when rename fails
+  it('saveToDisk cleans up randomized temp file when rename fails', async () => {
+    const { dir, cleanup } = setupCache();
+    // Make filePath itself a directory so renameSync(tempFile, dir) fails with EISDIR
+    const dirAsFilePath = path.join(dir, 'cache-dir');
+    fs.mkdirSync(dirAsFilePath);
+    const cache = new FlatFileCache({ filePath: dirAsFilePath });
+
+    // put() calls saveToDisk() which will fail at rename — should not throw
+    await cache.put('key', 'value');
+
+    // Value should be in memory even though disk write failed
+    assert.equal(await cache.get('key'), 'value');
+
+    // No stray .tmp files should remain in the dir
+    const tmpFiles = fs.readdirSync(dir).filter((f) => f.endsWith('.tmp'));
+    assert.equal(tmpFiles.length, 0);
+    cleanup();
+  });
 });

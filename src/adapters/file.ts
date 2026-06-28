@@ -3,10 +3,13 @@ import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { CachePayload, FileCacheOptions } from '../types.js';
+import { assertStringKey, validateTTL } from './base.js';
 import { BaseCacheAdapter } from './base.js';
 
 const DEFAULT_CACHE_DIR = path.join(tmpdir(), 'node-cache');
 const MAX_KEY_LENGTH = 200; // Safe limit for encoded filenames across filesystems
+const DEFAULT_FILE_MODE = 0o600;
+const DEFAULT_DIR_MODE = 0o700;
 
 /**
  * File-based cache with TTL support and pluggable adapter design.
@@ -23,12 +26,14 @@ const MAX_KEY_LENGTH = 200; // Safe limit for encoded filenames across filesyste
  */
 export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
   private readonly cacheDir: string;
+  private readonly fileMode: number;
 
   /**
    * Creates a new FileCache instance.
    *
    * @param options - Configuration options
    * @param options.cachePath - Custom cache directory path (defaults to OS temp directory)
+   * @param options.mode - POSIX file mode for cache files (default: 0o600)
    *
    * @example
    * ```ts
@@ -41,8 +46,9 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
 
     // Resolve to absolute path and normalize (prevents path traversal)
     this.cacheDir = path.resolve(cachePath);
+    this.fileMode = options.mode ?? DEFAULT_FILE_MODE;
 
-    fs.mkdirSync(this.cacheDir, { recursive: true });
+    fs.mkdirSync(this.cacheDir, { recursive: true, mode: DEFAULT_DIR_MODE });
   }
 
   /**
@@ -61,8 +67,6 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
    */
   async get(key: string, defaultValue?: V | (() => V | Promise<V>)): Promise<V | undefined> {
     const filename = this.pathForKey(key);
-    if (!fs.existsSync(filename)) return await this.resolveDefault(defaultValue);
-
     try {
       const content = fs.readFileSync(filename, 'utf8');
       const parsed = JSON.parse(content) as CachePayload<V> | null;
@@ -74,7 +78,10 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
       }
 
       return parsed.value ?? undefined;
-    } catch {
+    } catch (err) {
+      const error = err as NodeJS.ErrnoException;
+      if (error.code === 'ENOENT') return await this.resolveDefault(defaultValue);
+      // JSON parse errors or other read errors — return default
       return await this.resolveDefault(defaultValue);
     }
   }
@@ -93,11 +100,10 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
    */
   async pull(key: string, defaultValue?: V | (() => V | Promise<V>)): Promise<V | undefined> {
     const filename = this.pathForKey(key);
-    if (!fs.existsSync(filename)) return await this.resolveDefault(defaultValue);
-
     try {
       const content = fs.readFileSync(filename, 'utf8');
       const parsed = JSON.parse(content) as CachePayload<V> | null;
+
       if (!parsed) {
         fs.unlinkSync(filename);
         return await this.resolveDefault(defaultValue);
@@ -108,16 +114,15 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
         return await this.resolveDefault(defaultValue);
       }
 
-      fs.unlinkSync(filename);
+      // Delete before returning the value. Swallow cleanup errors so the value
+      // is always returned even if the file can't be removed (race condition).
+      try { fs.unlinkSync(filename); } catch { /* ignore race-condition failures */ }
       return parsed.value ?? undefined;
-    } catch {
-      if (fs.existsSync(filename)) {
-        try {
-          fs.unlinkSync(filename);
-        } catch {
-          /* ignore */
-        }
-      }
+    } catch (err) {
+      const error = err as NodeJS.ErrnoException;
+      if (error.code === 'ENOENT') return await this.resolveDefault(defaultValue);
+      // Other errors (directory entry, permissions) — try to clean up and return default
+      try { fs.unlinkSync(filename); } catch { /* ignore */ }
       return await this.resolveDefault(defaultValue);
     }
   }
@@ -127,7 +132,8 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
    *
    * @param key - The cache key
    * @param value - The value to store
-   * @param seconds - Optional TTL in seconds (omit for no expiration)
+   * @param seconds - Optional TTL in seconds (omit or pass Infinity for no expiration)
+   * @throws {RangeError} If seconds is NaN or negative
    *
    * @example
    * ```ts
@@ -136,12 +142,13 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
    * ```
    */
   async put(key: string, value: V, seconds?: number): Promise<void> {
+    validateTTL(seconds);
     const expiresAt =
       seconds == null || !Number.isFinite(seconds) ? undefined : Date.now() + seconds * 1000;
     // Store original key for reconstruction (needed for hashed long keys)
     const payload = JSON.stringify({ value, expiresAt, key });
     const filename = this.pathForKey(key);
-    fs.writeFileSync(filename, payload, 'utf8');
+    fs.writeFileSync(filename, payload, { encoding: 'utf8', mode: this.fileMode });
   }
 
   /**
@@ -172,9 +179,14 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
    */
   async forget(key: string): Promise<boolean> {
     const filename = this.pathForKey(key);
-    if (!fs.existsSync(filename)) return false;
-    fs.unlinkSync(filename);
-    return true;
+    try {
+      fs.unlinkSync(filename);
+      return true;
+    } catch (err) {
+      const error = err as NodeJS.ErrnoException;
+      if (error.code === 'ENOENT') return false;
+      throw error;
+    }
   }
 
   /**
@@ -199,6 +211,15 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
   /**
    * Stores a value only if the key doesn't already exist.
    *
+   * Atomicity guarantee: uses O_EXCL (exclusive file creation) so that at most
+   * one concurrent caller gets true on a single filesystem. This is per-process
+   * atomicity on a local filesystem — it is NOT a reliable distributed lock.
+   *
+   * Expired entries are treated as absent: add() will overwrite them and return true.
+   * Note: the atomicity guarantee applies only to a fresh (non-existent) key. When the
+   * key already exists but is expired, two concurrent callers may both overwrite it and
+   * return true, since the expired-overwrite path is not exclusive.
+   *
    * @param key - The cache key
    * @param value - The value to store
    * @param seconds - Optional TTL in seconds
@@ -211,8 +232,52 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
    * ```
    */
   async add(key: string, value: V, seconds?: number): Promise<boolean> {
-    if (await this.has(key)) return false;
-    await this.put(key, value, seconds);
+    const filename = this.pathForKey(key);
+
+    // Attempt exclusive creation (O_EXCL) — atomic on a single filesystem.
+    let fd: number;
+    try {
+      fd = fs.openSync(filename, 'wx', this.fileMode);
+    } catch (err) {
+      const error = err as NodeJS.ErrnoException;
+      if (error.code !== 'EEXIST') throw error;
+
+      // File exists — check if it's expired or invalid, and overwrite if so.
+      try {
+        const content = fs.readFileSync(filename, 'utf8');
+        const parsed = JSON.parse(content) as CachePayload<V> | null;
+
+        if (!parsed) {
+          // Null / corrupt payload — overwrite
+          await this.put(key, value, seconds);
+          return true;
+        }
+
+        if (parsed.expiresAt != null && parsed.expiresAt <= Date.now()) {
+          // Expired — overwrite
+          await this.put(key, value, seconds);
+          return true;
+        }
+
+        // Valid, non-expired entry — key already exists
+        return false;
+      } catch {
+        // JSON parse error — corrupt file, overwrite
+        await this.put(key, value, seconds);
+        return true;
+      }
+    }
+
+    // Exclusive create succeeded — write the payload and close.
+    try {
+      validateTTL(seconds);
+      const expiresAt =
+        seconds == null || !Number.isFinite(seconds) ? undefined : Date.now() + seconds * 1000;
+      const payload = JSON.stringify({ value, expiresAt, key });
+      fs.writeSync(fd, payload);
+    } finally {
+      fs.closeSync(fd);
+    }
     return true;
   }
 
@@ -238,10 +303,7 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
     }
 
     const value = await factory();
-    const expiresAt = Number.isFinite(seconds) ? Date.now() + seconds * 1000 : undefined;
-    const payload = JSON.stringify({ value, expiresAt, key });
-    const filename = this.pathForKey(key);
-    fs.writeFileSync(filename, payload, 'utf8');
+    await this.put(key, value, seconds);
     return value;
   }
 
@@ -263,12 +325,27 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
 
   /*****************************************************************************
    * Encode the key into a safe filename inside the cache directory.
-   * Long keys are hashed to prevent filesystem length limits.
+   *
+   * Guards:
+   *  1. key must be a string (L2)
+   *  2. The raw key, when path-resolved relative to cacheDir, must not escape
+   *     cacheDir — this blocks `.`, `..`, `../x`, and `a/../../b` (H2)
+   *  3. Defense-in-depth: the encoded filename, when path-resolved, must also
+   *     stay inside cacheDir
+   *  Long keys are hashed to prevent filesystem length limits.
    ****************************************************************************/
   private pathForKey(key: string): string {
-    let filename: string;
+    assertStringKey(key);
 
-    // Hash long keys to stay within filesystem limits (typically 255 bytes)
+    // Guard 1: resolve raw key as if it were a relative path — must stay inside cacheDir.
+    const boundary = path.resolve(this.cacheDir) + path.sep;
+    const resolvedRaw = path.resolve(this.cacheDir, key);
+    if (!resolvedRaw.startsWith(boundary)) {
+      throw new TypeError('Invalid cache key');
+    }
+
+    // Build encoded filename (hash long keys to stay within fs limits)
+    let filename: string;
     if (key.length > MAX_KEY_LENGTH) {
       const hash = crypto.createHash('sha256').update(key).digest('hex');
       filename = `long_${hash}`;
@@ -297,8 +374,6 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
    */
   async has(key: string): Promise<boolean> {
     const filename = this.pathForKey(key);
-    if (!fs.existsSync(filename)) return false;
-
     try {
       const content = fs.readFileSync(filename, 'utf8');
       const parsed = JSON.parse(content) as CachePayload<V> | null;
@@ -310,7 +385,9 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
       }
 
       return parsed.value !== undefined;
-    } catch {
+    } catch (err) {
+      const error = err as NodeJS.ErrnoException;
+      if (error.code === 'ENOENT') return false;
       return false;
     }
   }
@@ -483,8 +560,6 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
    */
   async ttl(key: string): Promise<number | null> {
     const filename = this.pathForKey(key);
-    if (!fs.existsSync(filename)) return null;
-
     try {
       const content = fs.readFileSync(filename, 'utf8');
       const parsed = JSON.parse(content) as CachePayload<V> | null;
@@ -503,7 +578,9 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
 
       // Return remaining time in seconds
       return Math.ceil(remaining / 1000);
-    } catch {
+    } catch (err) {
+      const error = err as NodeJS.ErrnoException;
+      if (error.code === 'ENOENT') return null;
       return null;
     }
   }
@@ -514,6 +591,7 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
    * @param key - The cache key
    * @param seconds - New TTL in seconds from now
    * @returns True if the TTL was updated, false if the key doesn't exist
+   * @throws {RangeError} If seconds is NaN or negative
    *
    * @example
    * ```ts
@@ -522,9 +600,8 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
    * ```
    */
   async touch(key: string, seconds: number): Promise<boolean> {
+    validateTTL(seconds);
     const filename = this.pathForKey(key);
-    if (!fs.existsSync(filename)) return false;
-
     try {
       const content = fs.readFileSync(filename, 'utf8');
       const parsed = JSON.parse(content) as CachePayload<V> | null;
@@ -545,9 +622,11 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
         expiresAt: newExpiresAt,
         key: parsed.key,
       });
-      fs.writeFileSync(filename, newPayload, 'utf8');
+      fs.writeFileSync(filename, newPayload, { encoding: 'utf8', mode: this.fileMode });
       return true;
-    } catch {
+    } catch (err) {
+      const error = err as NodeJS.ErrnoException;
+      if (error.code === 'ENOENT') return false;
       return false;
     }
   }
@@ -576,32 +655,33 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
     let storedKey: string | undefined;
 
     // Try to read existing value
-    if (fs.existsSync(filename)) {
-      try {
-        const content = fs.readFileSync(filename, 'utf8');
-        const parsed = JSON.parse(content) as {
-          value: unknown;
-          expiresAt?: number;
-          key?: string;
-        } | null;
+    try {
+      const content = fs.readFileSync(filename, 'utf8');
+      const parsed = JSON.parse(content) as {
+        value: unknown;
+        expiresAt?: number;
+        key?: string;
+      } | null;
 
-        if (parsed) {
-          // Only use existing value if it's a number
-          if (typeof parsed.value === 'number') {
-            currentValue = parsed.value;
-          }
-          expiresAt = parsed.expiresAt;
-          storedKey = parsed.key;
-
-          // Check if expired
-          if (expiresAt != null && expiresAt <= Date.now()) {
-            currentValue = 0;
-            expiresAt = undefined;
-          }
+      if (parsed) {
+        // Only use existing value if it's a number
+        if (typeof parsed.value === 'number') {
+          currentValue = parsed.value;
         }
-      } catch {
-        // Invalid file, start from 0
-        currentValue = 0;
+        expiresAt = parsed.expiresAt;
+        storedKey = parsed.key;
+
+        // Check if expired
+        if (expiresAt != null && expiresAt <= Date.now()) {
+          currentValue = 0;
+          expiresAt = undefined;
+        }
+      }
+    } catch (err) {
+      const error = err as NodeJS.ErrnoException;
+      // ENOENT means key doesn't exist yet — start from 0 (already the default)
+      if (error.code !== 'ENOENT') {
+        // Invalid file content — start from 0 (already the default)
       }
     }
 
@@ -611,7 +691,7 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
       expiresAt,
       key: storedKey ?? key,
     });
-    fs.writeFileSync(filename, payload, 'utf8');
+    fs.writeFileSync(filename, payload, { encoding: 'utf8', mode: this.fileMode });
     return newValue;
   }
 

@@ -11,6 +11,11 @@ export interface CacheOptions {
 export interface FileCacheOptions extends CacheOptions {
   /** Optional custom cache directory path. Defaults to OS temp directory. */
   cachePath?: string;
+  /**
+   * POSIX file mode for cache files (default: 0o600 — owner read/write only).
+   * Has no effect on Windows.
+   */
+  mode?: number;
 }
 
 /**
@@ -19,6 +24,11 @@ export interface FileCacheOptions extends CacheOptions {
 export interface FlatFileCacheOptions extends CacheOptions {
   /** Path to the flat cache file. Defaults to `<os tmp>/newton-cache.json`. */
   filePath?: string;
+  /**
+   * POSIX file mode for the cache file (default: 0o600 — owner read/write only).
+   * Has no effect on Windows.
+   */
+  mode?: number;
 }
 
 /**

@@ -100,11 +100,9 @@ describe('MemoryCache', () => {
     assert.equal(await cache.ttl('forever-put'), null);
   });
 
-  it('put with NaN TTL stores without expiresAt', async () => {
+  it('put throws RangeError for NaN TTL', async () => {
     const cache = new MemoryCache();
-    await cache.put('nan-put', 'value', Number.NaN);
-    assert.equal(await cache.get('nan-put'), 'value');
-    assert.equal(await cache.ttl('nan-put'), null);
+    await assert.rejects(() => cache.put('nan-put', 'value', Number.NaN), RangeError);
   });
 
   it('forever stores without expiry', async () => {
@@ -601,5 +599,98 @@ describe('MemoryCache', () => {
       user2: 'Bob',
       user3: undefined,
     });
+  });
+
+  // ── Security fixes ──────────────────────────────────────────────────────────
+
+  // M3: TTL validation
+  it('put throws RangeError for negative TTL', async () => {
+    const cache = new MemoryCache();
+    await assert.rejects(() => cache.put('key', 'value', -1), RangeError);
+  });
+
+  it('put accepts Infinity TTL (stores without expiry)', async () => {
+    const cache = new MemoryCache();
+    await cache.put('inf-key', 'value', Infinity);
+    assert.equal(await cache.get('inf-key'), 'value');
+    assert.equal(await cache.ttl('inf-key'), null);
+  });
+
+  it('put accepts zero TTL without throwing', async () => {
+    const cache = new MemoryCache();
+    await assert.doesNotReject(() => cache.put('zero-key', 'value', 0));
+  });
+
+  it('touch throws RangeError for negative seconds', async () => {
+    const cache = new MemoryCache();
+    await cache.put('key', 'value');
+    await assert.rejects(() => cache.touch('key', -1), RangeError);
+  });
+
+  it('touch throws RangeError for NaN seconds', async () => {
+    const cache = new MemoryCache();
+    await cache.put('key', 'value');
+    await assert.rejects(() => cache.touch('key', Number.NaN), RangeError);
+  });
+
+  // H1: add() is synchronous check-and-set (no async yield between check and set)
+  it('add succeeds when existing entry is expired', async () => {
+    const cache = new MemoryCache();
+    await cache.put('exp-key', 'old', 0.001);
+    const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    await delay(10);
+    assert.equal(await cache.add('exp-key', 'new', 10), true);
+    assert.equal(await cache.get('exp-key'), 'new');
+  });
+
+  // M4: getMany prototype pollution
+  it('getMany with __proto__ key does not pollute Object.prototype', async () => {
+    const cache = new MemoryCache();
+    await cache.put('__proto__', { isAdmin: true } as unknown as string);
+    await cache.getMany(['__proto__']);
+    assert.equal((Object.prototype as Record<string, unknown>).isAdmin, undefined);
+  });
+
+  it('getMany handles constructor and prototype keys safely', async () => {
+    const cache = new MemoryCache();
+    await cache.put('constructor', 'val1');
+    await cache.put('prototype', 'val2');
+    const result = await cache.getMany(['constructor', 'prototype', 'missing']);
+    assert.equal(result['constructor'], 'val1');
+    assert.equal(result['prototype'], 'val2');
+    assert.equal(result['missing'], undefined);
+  });
+
+  // L2: Key type validation
+  it('put throws TypeError for non-string key (number)', async () => {
+    const cache = new MemoryCache();
+    await assert.rejects(
+      () => cache.put(42 as unknown as string, 'value'),
+      TypeError
+    );
+  });
+
+  it('get throws TypeError for non-string key (null)', async () => {
+    const cache = new MemoryCache();
+    await assert.rejects(
+      () => cache.get(null as unknown as string),
+      TypeError
+    );
+  });
+
+  it('has throws TypeError for non-string key (undefined)', async () => {
+    const cache = new MemoryCache();
+    await assert.rejects(
+      () => cache.has(undefined as unknown as string),
+      TypeError
+    );
+  });
+
+  // Coverage: add() with no TTL (exercises the Infinity/null branch)
+  it('add stores without TTL when seconds is omitted', async () => {
+    const cache = new MemoryCache();
+    assert.equal(await cache.add('no-ttl', 'value'), true);
+    assert.equal(await cache.ttl('no-ttl'), null);
+    assert.equal(await cache.get('no-ttl'), 'value');
   });
 });

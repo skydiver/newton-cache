@@ -219,14 +219,9 @@ describe('FileCache', () => {
     cleanup();
   });
 
-  it('put with NaN TTL stores without expiresAt', async () => {
-    const { cache, cleanup, dir } = setupCache();
-    const key = 'nan-put';
-    await cache.put(key, 'value', Number.NaN);
-    const filename = path.join(dir, encodeURIComponent(key));
-    const payload = JSON.parse(fs.readFileSync(filename, 'utf8'));
-    assert.equal(payload.value, 'value');
-    assert.equal(Object.hasOwn(payload, 'expiresAt'), false);
+  it('put throws RangeError for NaN TTL', async () => {
+    const { cache, cleanup } = setupCache();
+    await assert.rejects(() => cache.put('nan-put', 'value', Number.NaN), RangeError);
     cleanup();
   });
 
@@ -1117,6 +1112,272 @@ describe('FileCache', () => {
       user2: 'Bob',
       user3: undefined,
     });
+    cleanup();
+  });
+
+  // ── Security fixes ──────────────────────────────────────────────────────────
+
+  // H2: Path traversal prevention
+  it('pathForKey throws TypeError for empty key', async () => {
+    const { cache, cleanup } = setupCache();
+    await assert.rejects(() => cache.put('', 'value'), TypeError);
+    cleanup();
+  });
+
+  it('pathForKey throws TypeError for dot key', async () => {
+    const { cache, cleanup } = setupCache();
+    await assert.rejects(() => cache.put('.', 'value'), TypeError);
+    cleanup();
+  });
+
+  it('pathForKey throws TypeError for double-dot key', async () => {
+    const { cache, cleanup } = setupCache();
+    await assert.rejects(() => cache.put('..', 'value'), TypeError);
+    cleanup();
+  });
+
+  it('pathForKey throws TypeError for dot-dot-slash prefix key', async () => {
+    const { cache, cleanup } = setupCache();
+    await assert.rejects(() => cache.put('../escape', 'value'), TypeError);
+    cleanup();
+  });
+
+  it('pathForKey throws TypeError for embedded traversal key', async () => {
+    const { cache, cleanup } = setupCache();
+    await assert.rejects(() => cache.put('a/../../b', 'value'), TypeError);
+    cleanup();
+  });
+
+  it('pathForKey does not write any file outside cacheDir for traversal keys', async () => {
+    const { cache, dir, cleanup } = setupCache();
+    const parentDir = path.dirname(dir);
+    const filesBefore = fs.readdirSync(parentDir);
+
+    await assert.rejects(() => cache.put('..', 'x'), TypeError);
+    await assert.rejects(() => cache.put('../escape', 'x'), TypeError);
+
+    const filesAfter = fs.readdirSync(parentDir);
+    assert.deepEqual(filesBefore, filesAfter);
+    cleanup();
+  });
+
+  it('get throws TypeError for traversal key (no file read outside cacheDir)', async () => {
+    const { cache, cleanup } = setupCache();
+    await assert.rejects(() => cache.get('..'), TypeError);
+    cleanup();
+  });
+
+  it('forget throws TypeError for traversal key', async () => {
+    const { cache, cleanup } = setupCache();
+    await assert.rejects(() => cache.forget('..'), TypeError);
+    cleanup();
+  });
+
+  it('has throws TypeError for traversal key', async () => {
+    const { cache, cleanup } = setupCache();
+    await assert.rejects(() => cache.has('..'), TypeError);
+    cleanup();
+  });
+
+  it('increment throws TypeError for traversal key', async () => {
+    const { cache, cleanup } = setupCache();
+    await assert.rejects(() => cache.increment('..'), TypeError);
+    cleanup();
+  });
+
+  // H1: add() — expired key overwrite preserved with O_EXCL
+  it('add succeeds when existing file holds an expired entry', async () => {
+    const { cache, dir, cleanup } = setupCache();
+    const key = 'expired-add';
+    const filename = path.join(dir, encodeURIComponent(key));
+    fs.writeFileSync(
+      filename,
+      JSON.stringify({ value: 'old', expiresAt: Date.now() - 1000, key }),
+      'utf8'
+    );
+    assert.equal(await cache.add(key, 'new', 10), true);
+    const payload = JSON.parse(fs.readFileSync(filename, 'utf8'));
+    assert.equal(payload.value, 'new');
+    cleanup();
+  });
+
+  // M3: TTL validation
+  it('put throws RangeError for negative TTL', async () => {
+    const { cache, cleanup } = setupCache();
+    await assert.rejects(() => cache.put('key', 'value', -1), RangeError);
+    cleanup();
+  });
+
+  it('put accepts Infinity TTL (stores without expiry)', async () => {
+    const { cache, cleanup } = setupCache();
+    await cache.put('inf-key', 'value', Infinity);
+    assert.equal(await cache.get('inf-key'), 'value');
+    assert.equal(await cache.ttl('inf-key'), null);
+    cleanup();
+  });
+
+  it('put accepts zero TTL without throwing', async () => {
+    const { cache, cleanup } = setupCache();
+    await assert.doesNotReject(() => cache.put('zero-key', 'value', 0));
+    cleanup();
+  });
+
+  it('touch throws RangeError for negative seconds', async () => {
+    const { cache, cleanup } = setupCache();
+    await cache.put('key', 'value');
+    await assert.rejects(() => cache.touch('key', -1), RangeError);
+    cleanup();
+  });
+
+  it('touch throws RangeError for NaN seconds', async () => {
+    const { cache, cleanup } = setupCache();
+    await cache.put('key', 'value');
+    await assert.rejects(() => cache.touch('key', Number.NaN), RangeError);
+    cleanup();
+  });
+
+  // M1: File permissions (POSIX only)
+  it('writes cache files with mode 0o600', async () => {
+    if (process.platform === 'win32') return;
+    const { cache, dir, cleanup } = setupCache();
+    await cache.put('mode-test', 'value');
+    const filename = path.join(dir, encodeURIComponent('mode-test'));
+    const stats = fs.statSync(filename);
+    assert.equal(stats.mode & 0o777, 0o600);
+    cleanup();
+  });
+
+  it('add creates cache files with mode 0o600 (O_EXCL path)', async () => {
+    if (process.platform === 'win32') return;
+    const { cache, dir, cleanup } = setupCache();
+    await cache.add('add-mode-test', 'value');
+    const filename = path.join(dir, encodeURIComponent('add-mode-test'));
+    const stats = fs.statSync(filename);
+    assert.equal(stats.mode & 0o777, 0o600);
+    cleanup();
+  });
+
+  // M4: getMany prototype pollution prevention
+  it('getMany with __proto__ key does not pollute Object.prototype', async () => {
+    const { cache, cleanup } = setupCache();
+    await cache.put('__proto__', { isAdmin: true } as unknown as string);
+    await cache.getMany(['__proto__']);
+    assert.equal((Object.prototype as Record<string, unknown>).isAdmin, undefined);
+    cleanup();
+  });
+
+  it('getMany handles constructor and prototype keys safely', async () => {
+    const { cache, cleanup } = setupCache();
+    await cache.put('constructor', 'val1');
+    await cache.put('prototype', 'val2');
+    const result = await cache.getMany(['constructor', 'prototype', 'missing']);
+    assert.equal(result['constructor'], 'val1');
+    assert.equal(result['prototype'], 'val2');
+    assert.equal(result['missing'], undefined);
+    cleanup();
+  });
+
+  // L2: Key type validation
+  it('put throws TypeError for non-string key (number)', async () => {
+    const { cache, cleanup } = setupCache();
+    await assert.rejects(
+      () => cache.put(42 as unknown as string, 'value'),
+      TypeError
+    );
+    cleanup();
+  });
+
+  it('get throws TypeError for non-string key (null)', async () => {
+    const { cache, cleanup } = setupCache();
+    await assert.rejects(
+      () => cache.get(null as unknown as string),
+      TypeError
+    );
+    cleanup();
+  });
+
+  it('has throws TypeError for non-string key (undefined)', async () => {
+    const { cache, cleanup } = setupCache();
+    await assert.rejects(
+      () => cache.has(undefined as unknown as string),
+      TypeError
+    );
+    cleanup();
+  });
+
+  // Coverage: add() with null-content file (valid JSON but null value)
+  it('add overwrites a file whose parsed content is null', async () => {
+    const { cache, dir, cleanup } = setupCache();
+    const key = 'null-payload-add';
+    const filename = path.join(dir, encodeURIComponent(key));
+    fs.writeFileSync(filename, 'null', 'utf8');
+
+    assert.equal(await cache.add(key, 'new-value', 10), true);
+    const payload = JSON.parse(fs.readFileSync(filename, 'utf8'));
+    assert.equal(payload.value, 'new-value');
+    cleanup();
+  });
+
+  // Coverage: has() with EISDIR (non-ENOENT read error)
+  it('has returns false when the key path is a directory (EISDIR)', async () => {
+    const { cache, dir, cleanup } = setupCache();
+    const key = 'dir-as-file';
+    const filename = path.join(dir, encodeURIComponent(key));
+    fs.mkdirSync(filename);
+
+    assert.equal(await cache.has(key), false);
+    cleanup();
+  });
+
+  // Coverage: forget() non-ENOENT error propagates
+  it('forget throws when unlinking fails with a non-ENOENT error', async () => {
+    const { cache, dir, cleanup } = setupCache();
+    const key = 'dir-collision-forget';
+    const filename = path.join(dir, encodeURIComponent(key));
+    fs.mkdirSync(filename);
+
+    // Attempting to unlink a directory throws EISDIR (not ENOENT), so it propagates
+    await assert.rejects(() => cache.forget(key));
+    cleanup();
+  });
+
+  // Coverage: add() without TTL (Infinity/null branch in O_EXCL path)
+  it('add stores without TTL when seconds is omitted', async () => {
+    const { cache, cleanup } = setupCache();
+    assert.equal(await cache.add('no-ttl', 'value'), true);
+    assert.equal(await cache.ttl('no-ttl'), null);
+    cleanup();
+  });
+
+  // Coverage: pull() returns value even when cleanup delete fails (POSIX race-condition guard)
+  it('pull returns value even when the cleanup delete fails (POSIX only)', async () => {
+    if (process.platform === 'win32') return;
+    const { cache, dir, cleanup } = setupCache();
+    await cache.put('pull-keep-value', 'important');
+
+    // Make directory read-only so unlinkSync on the file fails with EACCES
+    fs.chmodSync(dir, 0o555);
+    try {
+      const value = await cache.pull('pull-keep-value');
+      assert.equal(value, 'important'); // Value is returned despite delete failure
+    } finally {
+      fs.chmodSync(dir, 0o755); // Restore before cleanup
+    }
+    cleanup();
+  });
+
+  // Coverage: add() propagates non-EEXIST OS errors from O_EXCL creation
+  it('add propagates non-EEXIST errors from exclusive file creation (POSIX only)', async () => {
+    if (process.platform === 'win32') return;
+    const { cache, dir, cleanup } = setupCache();
+
+    // Make cache directory read-only: openSync('wx') will fail with EACCES, not EEXIST
+    fs.chmodSync(dir, 0o555);
+    try {
+      await assert.rejects(() => cache.add('blocked-key', 'value'));
+    } finally {
+      fs.chmodSync(dir, 0o755);
+    }
     cleanup();
   });
 });

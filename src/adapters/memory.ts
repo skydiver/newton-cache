@@ -1,4 +1,5 @@
 import type { CachePayload, MemoryCacheOptions } from '../types.js';
+import { assertStringKey, validateTTL } from './base.js';
 import { BaseCacheAdapter } from './base.js';
 
 /**
@@ -27,7 +28,7 @@ export class MemoryCache<V = unknown> extends BaseCacheAdapter<V> {
    * const cache = new MemoryCache<User>();
    * ```
    */
-  constructor(options: MemoryCacheOptions = {}) {
+  constructor(_options: MemoryCacheOptions = {}) {
     super();
     this.store = new Map();
   }
@@ -47,6 +48,7 @@ export class MemoryCache<V = unknown> extends BaseCacheAdapter<V> {
    * ```
    */
   async get(key: string, defaultValue?: V | (() => V | Promise<V>)): Promise<V | undefined> {
+    assertStringKey(key);
     const entry = this.store.get(key);
 
     if (!entry) {
@@ -75,6 +77,7 @@ export class MemoryCache<V = unknown> extends BaseCacheAdapter<V> {
    * ```
    */
   async pull(key: string, defaultValue?: V | (() => V | Promise<V>)): Promise<V | undefined> {
+    assertStringKey(key);
     const entry = this.store.get(key);
 
     if (!entry) {
@@ -96,7 +99,8 @@ export class MemoryCache<V = unknown> extends BaseCacheAdapter<V> {
    *
    * @param key - The cache key
    * @param value - The value to store
-   * @param seconds - Optional TTL in seconds (omit for no expiration)
+   * @param seconds - Optional TTL in seconds (omit or pass Infinity for no expiration)
+   * @throws {RangeError} If seconds is NaN or negative
    *
    * @example
    * ```ts
@@ -105,6 +109,8 @@ export class MemoryCache<V = unknown> extends BaseCacheAdapter<V> {
    * ```
    */
   async put(key: string, value: V, seconds?: number): Promise<void> {
+    assertStringKey(key);
+    validateTTL(seconds);
     const expiresAt =
       seconds == null || !Number.isFinite(seconds) ? undefined : Date.now() + seconds * 1000;
 
@@ -138,6 +144,7 @@ export class MemoryCache<V = unknown> extends BaseCacheAdapter<V> {
    * ```
    */
   async forget(key: string): Promise<boolean> {
+    assertStringKey(key);
     return this.store.delete(key);
   }
 
@@ -156,6 +163,13 @@ export class MemoryCache<V = unknown> extends BaseCacheAdapter<V> {
   /**
    * Stores a value only if the key doesn't already exist.
    *
+   * Atomicity guarantee: the existence check and Map.set happen synchronously
+   * with no await between them, so within a single process (single event loop
+   * tick) this is race-free. This is per-process atomicity — it is NOT a
+   * reliable distributed lock across multiple processes or machines.
+   *
+   * Expired entries are treated as absent: add() will overwrite them and return true.
+   *
    * @param key - The cache key
    * @param value - The value to store
    * @param seconds - Optional TTL in seconds
@@ -168,8 +182,22 @@ export class MemoryCache<V = unknown> extends BaseCacheAdapter<V> {
    * ```
    */
   async add(key: string, value: V, seconds?: number): Promise<boolean> {
-    if (await this.has(key)) return false;
-    await this.put(key, value, seconds);
+    assertStringKey(key);
+
+    // Synchronous check-and-set — no await between the Map lookup and Map.set().
+    const entry = this.store.get(key);
+    if (
+      entry !== undefined &&
+      entry.value !== undefined &&
+      (entry.expiresAt == null || entry.expiresAt > Date.now())
+    ) {
+      return false;
+    }
+
+    validateTTL(seconds);
+    const expiresAt =
+      seconds == null || !Number.isFinite(seconds) ? undefined : Date.now() + seconds * 1000;
+    this.store.set(key, { value, expiresAt, key });
     return true;
   }
 
@@ -189,6 +217,7 @@ export class MemoryCache<V = unknown> extends BaseCacheAdapter<V> {
    * ```
    */
   async remember(key: string, seconds: number, factory: () => V | Promise<V>): Promise<V> {
+    assertStringKey(key);
     if (await this.has(key)) {
       const existing = await this.get(key);
       if (existing !== undefined) return existing;
@@ -229,6 +258,7 @@ export class MemoryCache<V = unknown> extends BaseCacheAdapter<V> {
    * ```
    */
   async has(key: string): Promise<boolean> {
+    assertStringKey(key);
     const entry = this.store.get(key);
 
     if (!entry) return false;
@@ -360,6 +390,7 @@ export class MemoryCache<V = unknown> extends BaseCacheAdapter<V> {
    * ```
    */
   async ttl(key: string): Promise<number | null> {
+    assertStringKey(key);
     const entry = this.store.get(key);
 
     if (!entry || entry.value === undefined) return null;
@@ -384,6 +415,7 @@ export class MemoryCache<V = unknown> extends BaseCacheAdapter<V> {
    * @param key - The cache key
    * @param seconds - New TTL in seconds from now
    * @returns True if the TTL was updated, false if the key doesn't exist
+   * @throws {RangeError} If seconds is NaN or negative
    *
    * @example
    * ```ts
@@ -392,6 +424,8 @@ export class MemoryCache<V = unknown> extends BaseCacheAdapter<V> {
    * ```
    */
   async touch(key: string, seconds: number): Promise<boolean> {
+    assertStringKey(key);
+    validateTTL(seconds);
     const entry = this.store.get(key);
 
     if (!entry || entry.value === undefined) return false;
@@ -433,6 +467,7 @@ export class MemoryCache<V = unknown> extends BaseCacheAdapter<V> {
    * ```
    */
   async increment(key: string, amount = 1): Promise<number> {
+    assertStringKey(key);
     const entry = this.store.get(key);
     let currentValue = 0;
     let expiresAt: number | undefined;

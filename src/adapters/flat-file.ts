@@ -1,10 +1,14 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { CachePayload, FlatFileCacheOptions } from '../types.js';
+import { assertStringKey, validateTTL } from './base.js';
 import { BaseCacheAdapter } from './base.js';
 
 const DEFAULT_CACHE_FILE = path.join(tmpdir(), 'newton-cache.json');
+const DEFAULT_FILE_MODE = 0o600;
+const DEFAULT_DIR_MODE = 0o700;
 
 /**
  * Flat-file cache that stores all entries in a single JSON file.
@@ -25,6 +29,7 @@ const DEFAULT_CACHE_FILE = path.join(tmpdir(), 'newton-cache.json');
 export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
   private readonly filePath: string;
   private readonly store: Map<string, CachePayload<V>>;
+  private readonly fileMode: number;
   private loaded = false;
   private removedOnLoad = 0;
 
@@ -33,6 +38,7 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
    *
    * @param options - Configuration options
    * @param options.filePath - Custom cache file path (defaults to `<os tmp>/newton-cache.json`)
+   * @param options.mode - POSIX file mode for the cache file (default: 0o600)
    *
    * @example
    * ```ts
@@ -43,6 +49,7 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
     super();
     const targetPath = options.filePath ?? DEFAULT_CACHE_FILE;
     this.filePath = path.resolve(targetPath);
+    this.fileMode = options.mode ?? DEFAULT_FILE_MODE;
     this.store = new Map();
   }
 
@@ -60,7 +67,8 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
    * const value = await cache.get('user:123', () => fetchUser()); // Returns value or calls factory
    * ```
    */
-  async get(key: string, defaultValue?: V | (() => V)): Promise<V | undefined> {
+  async get(key: string, defaultValue?: V | (() => V | Promise<V>)): Promise<V | undefined> {
+    assertStringKey(key);
     this.loadFromDisk();
     const entry = this.store.get(key);
     if (!entry) return await this.resolveDefault(defaultValue);
@@ -86,7 +94,8 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
    * const token = await cache.pull('one-time-token'); // Read and delete
    * ```
    */
-  async pull(key: string, defaultValue?: V | (() => V)): Promise<V | undefined> {
+  async pull(key: string, defaultValue?: V | (() => V | Promise<V>)): Promise<V | undefined> {
+    assertStringKey(key);
     this.loadFromDisk();
     const entry = this.store.get(key);
     if (!entry) return await this.resolveDefault(defaultValue);
@@ -109,7 +118,8 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
    *
    * @param key - The cache key
    * @param value - The value to store
-   * @param seconds - Optional TTL in seconds (omit for no expiration)
+   * @param seconds - Optional TTL in seconds (omit or pass Infinity for no expiration)
+   * @throws {RangeError} If seconds is NaN or negative
    *
    * @example
    * ```ts
@@ -118,6 +128,8 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
    * ```
    */
   async put(key: string, value: V, seconds?: number): Promise<void> {
+    assertStringKey(key);
+    validateTTL(seconds);
     this.loadFromDisk();
     const expiresAt =
       seconds == null || !Number.isFinite(seconds) ? undefined : Date.now() + seconds * 1000;
@@ -152,6 +164,7 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
    * ```
    */
   async forget(key: string): Promise<boolean> {
+    assertStringKey(key);
     this.loadFromDisk();
     const existed = this.store.delete(key);
     if (existed) this.saveToDisk();
@@ -179,6 +192,13 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
   /**
    * Stores a value only if the key doesn't already exist.
    *
+   * Atomicity guarantee: the existence check and store write happen synchronously
+   * in the in-memory Map with no await between them, so within a single process
+   * this is race-free. This is per-process atomicity — it is NOT a reliable
+   * distributed lock across multiple processes or machines.
+   *
+   * Expired entries are treated as absent: add() will overwrite them and return true.
+   *
    * @param key - The cache key
    * @param value - The value to store
    * @param seconds - Optional TTL in seconds
@@ -190,8 +210,20 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
    * ```
    */
   async add(key: string, value: V, seconds?: number): Promise<boolean> {
-    if (await this.has(key)) return false;
-    await this.put(key, value, seconds);
+    assertStringKey(key);
+    this.loadFromDisk();
+
+    // Synchronous check-and-set — no await between the check and the store.set().
+    const entry = this.store.get(key);
+    if (entry && !this.isExpired(entry) && entry.value !== undefined) {
+      return false;
+    }
+
+    validateTTL(seconds);
+    const expiresAt =
+      seconds == null || !Number.isFinite(seconds) ? undefined : Date.now() + seconds * 1000;
+    this.store.set(key, { value, expiresAt, key });
+    this.saveToDisk();
     return true;
   }
 
@@ -209,6 +241,7 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
    * ```
    */
   async remember(key: string, seconds: number, factory: () => V | Promise<V>): Promise<V> {
+    assertStringKey(key);
     if (await this.has(key)) {
       const existing = await this.get(key);
       if (existing !== undefined) return existing;
@@ -249,6 +282,7 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
    * ```
    */
   async has(key: string): Promise<boolean> {
+    assertStringKey(key);
     this.loadFromDisk();
     const entry = this.store.get(key);
     if (!entry) return false;
@@ -362,6 +396,7 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
    * ```
    */
   async ttl(key: string): Promise<number | null> {
+    assertStringKey(key);
     this.loadFromDisk();
     const entry = this.store.get(key);
     if (!entry || entry.value === undefined) return null;
@@ -384,6 +419,7 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
    * @param key - The cache key
    * @param seconds - New TTL in seconds from now
    * @returns True if the TTL was updated, false if the key doesn't exist
+   * @throws {RangeError} If seconds is NaN or negative
    *
    * @example
    * ```ts
@@ -391,6 +427,8 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
    * ```
    */
   async touch(key: string, seconds: number): Promise<boolean> {
+    assertStringKey(key);
+    validateTTL(seconds);
     this.loadFromDisk();
     const entry = this.store.get(key);
     if (!entry || entry.value === undefined) return false;
@@ -425,6 +463,7 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
    * ```
    */
   async increment(key: string, amount = 1): Promise<number> {
+    assertStringKey(key);
     this.loadFromDisk();
     const entry = this.store.get(key);
     let currentValue = 0;
@@ -473,12 +512,20 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
     this.store.clear();
     this.removedOnLoad = 0;
 
-    if (!fs.existsSync(this.filePath)) return;
-
     let dirty = false;
+    let content = '';
     try {
-      const content = fs.readFileSync(this.filePath, 'utf8');
-      if (!content.trim()) return;
+      content = fs.readFileSync(this.filePath, 'utf8');
+    } catch (err) {
+      // Missing file is the normal "empty cache" case — not corruption.
+      // Reading directly (no existsSync pre-check) closes the symlink-swap
+      // TOCTOU window. Any other read error is treated as corrupt → rewrite.
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
+      dirty = true;
+    }
+
+    try {
+      if (!dirty && !content.trim()) return;
 
       const parsed = JSON.parse(content) as Record<string, CachePayload<V>> | null;
       if (!parsed || typeof parsed !== 'object') {
@@ -529,14 +576,16 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
   }
 
   /**
-   * Persists the entire cache to disk atomically using temp file + rename.
+   * Persists the entire cache to disk atomically using a randomized temp file + rename.
+   * The temp filename is randomized to prevent symlink-based write-primitive attacks.
+   * On rename failure the temp file is cleaned up to avoid leaking it.
    * Writes are silent-fail (errors ignored) to avoid throwing during cache operations.
    */
   private saveToDisk(): void {
     try {
       const dir = path.dirname(this.filePath);
-      fs.mkdirSync(dir, { recursive: true });
-      const tempPath = `${this.filePath}.tmp`;
+      fs.mkdirSync(dir, { recursive: true, mode: DEFAULT_DIR_MODE });
+      const tempPath = `${this.filePath}.${crypto.randomBytes(6).toString('hex')}.tmp`;
 
       const payload: Record<string, CachePayload<V>> = {};
       for (const [key, value] of this.store.entries()) {
@@ -544,10 +593,16 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
       }
 
       const serialized = JSON.stringify(payload);
-      fs.writeFileSync(tempPath, serialized, 'utf8');
-      fs.renameSync(tempPath, this.filePath);
+      fs.writeFileSync(tempPath, serialized, { encoding: 'utf8', mode: this.fileMode });
+      try {
+        fs.renameSync(tempPath, this.filePath);
+      } catch (renameErr) {
+        // Clean up temp file on rename failure to avoid leaking it.
+        try { fs.unlinkSync(tempPath); } catch { /* ignore */ }
+        throw renameErr;
+      }
     } catch {
-      /* ignore */
+      /* ignore — cache writes must not throw */
     }
   }
 }

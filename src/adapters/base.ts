@@ -1,4 +1,34 @@
 /**
+ * Validates a TTL value, throwing RangeError for invalid values.
+ *
+ * undefined and Infinity are valid (they mean "no expiry").
+ * A TTL of 0 is valid and means "expires immediately" (the entry is written
+ * then treated as expired on the next read).
+ * NaN and negative numbers are rejected.
+ *
+ * @param seconds - TTL in seconds (may be undefined)
+ * @throws {RangeError} If seconds is NaN or negative
+ */
+export function validateTTL(seconds: number | undefined): void {
+  if (seconds === undefined) return;
+  if (Number.isNaN(seconds) || seconds < 0) {
+    throw new RangeError(`TTL must be a non-negative number (got ${seconds})`);
+  }
+}
+
+/**
+ * Asserts that a cache key is a string at runtime, throwing TypeError otherwise.
+ *
+ * @param key - The value to assert as a string key
+ * @throws {TypeError} If key is not a string
+ */
+export function assertStringKey(key: unknown): asserts key is string {
+  if (typeof key !== 'string') {
+    throw new TypeError(`Cache key must be a string (got ${typeof key})`);
+  }
+}
+
+/**
  * Base interface that all cache adapters must implement.
  * Defines the standard cache operations with TTL support.
  *
@@ -240,7 +270,15 @@ export abstract class BaseCacheAdapter<V = unknown> implements CacheAdapter<V> {
   async getMany(keys: string[]): Promise<Record<string, V | undefined>> {
     const result: Record<string, V | undefined> = {};
     for (const key of keys) {
-      result[key] = await this.get(key);
+      // Use Object.defineProperty ([[DefineOwnProperty]]) instead of assignment
+      // ([[Set]]) to bypass the __proto__ accessor and prevent prototype pollution
+      // when a key named '__proto__' is present.
+      Object.defineProperty(result, key, {
+        value: await this.get(key),
+        writable: true,
+        enumerable: true,
+        configurable: true,
+      });
     }
     return result;
   }
