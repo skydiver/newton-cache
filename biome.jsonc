@@ -1,7 +1,10 @@
 {
-  "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.5.1/schema.json",
   "vcs": { "enabled": false, "clientKind": "git", "useIgnoreFile": false },
-  "files": { "ignoreUnknown": false, "ignore": [] },
+  "files": {
+    "ignoreUnknown": false,
+    "includes": ["**", "!**/dist/**", "!**/coverage/**", "!**/*.tsbuildinfo"],
+  },
   "formatter": {
     "enabled": true,
     "useEditorconfig": true,
@@ -12,19 +15,20 @@
     "lineWidth": 100,
     "attributePosition": "auto",
     "bracketSpacing": true,
-    "ignore": ["**/pnpm-lock.yaml", "**/LICENSE"]
+    "includes": ["**", "!**/pnpm-lock.yaml", "!**/LICENSE"],
   },
-  "organizeImports": { "enabled": true },
+  "assist": { "actions": { "source": { "organizeImports": "on" } } },
   "linter": {
     "enabled": true,
     "rules": {
       "recommended": false,
       "complexity": {
+        "noAdjacentSpacesInRegex": "error",
         "noExtraBooleanCast": "error",
-        "noMultipleSpacesInRegularExpressionLiterals": "error",
         "noUselessCatch": "error",
+        "noUselessCatchBinding": "error",
         "noUselessTypeConstraint": "error",
-        "noWith": "error"
+        "noUselessUndefined": "error",
       },
       "correctness": {
         "noConstAssign": "error",
@@ -42,20 +46,22 @@
         "noUndeclaredVariables": "error",
         "noUnreachable": "error",
         "noUnreachableSuper": "error",
+        "noUnresolvedImports": "error",
         "noUnsafeFinally": "error",
         "noUnsafeOptionalChaining": "error",
         "noUnusedLabels": "error",
         "noUnusedPrivateClassMembers": "error",
         "noUnusedVariables": "error",
-        "useArrayLiterals": "off",
         "useIsNan": "error",
         "useValidForDirection": "error",
-        "useYield": "error"
+        "useYield": "error",
+        "useValidTypeof": "error",
       },
       "style": {
         "noNamespace": "error",
         "useAsConstAssertion": "error",
-        "useBlockStatements": "off"
+        "useBlockStatements": "off",
+        "useArrayLiterals": "off",
       },
       "suspicious": {
         "noAsyncPromiseExecutor": "error",
@@ -64,8 +70,10 @@
         "noCompareNegZero": "error",
         "noControlCharactersInRegex": "error",
         "noDebugger": "error",
+        "noDeprecatedImports": "error",
         "noDuplicateCase": "error",
         "noDuplicateClassMembers": "error",
+        "noDuplicateDependencies": "error",
         "noDuplicateObjectKeys": "error",
         "noDuplicateParameters": "error",
         "noEmptyBlockStatements": "error",
@@ -75,6 +83,7 @@
         "noFunctionAssign": "error",
         "noGlobalAssign": "error",
         "noImportAssign": "error",
+        "noImportCycles": "error",
         "noMisleadingCharacterClass": "error",
         "noMisleadingInstantiator": "error",
         "noPrototypeBuiltins": "error",
@@ -83,27 +92,29 @@
         "noSparseArray": "error",
         "noUnsafeDeclarationMerging": "error",
         "noUnsafeNegation": "error",
+        "noUnusedExpressions": "error",
         "useGetterReturn": "error",
         "useNamespaceKeyword": "error",
-        "useValidTypeof": "error"
-      }
+        "noWith": "error",
+      },
     },
-    "ignore": [
-      "**/node_modules/",
-      "coverage/",
-      "build/",
-      "**/.env",
-      "**/.env.*",
-      "!.env.example",
-      ".vscode/*",
-      "!.vscode/extensions.json",
-      "!.vscode/settings.json",
-      "**/.idea/",
-      "**/*.tsbuildinfo",
-      "**/.pnpm-debug.log*",
-      "**/.DS_Store",
-      "**/Thumbs.db"
-    ]
+    "includes": [
+      "**",
+      "!**/node_modules/",
+      "!**/coverage/",
+      "!**/build/",
+      "!**/.env",
+      "!**/.env.*",
+      "!**/!.env.example",
+      "!**/.vscode/**/*",
+      "!**/!.vscode/extensions.json",
+      "!**/!.vscode/settings.json",
+      "!**/.idea/",
+      "!**/*.tsbuildinfo",
+      "!**/.pnpm-debug.log*",
+      "!**/.DS_Store",
+      "!**/Thumbs.db",
+    ],
   },
   "javascript": {
     "formatter": {
@@ -115,32 +126,32 @@
       "bracketSameLine": false,
       "quoteStyle": "single",
       "attributePosition": "auto",
-      "bracketSpacing": true
+      "bracketSpacing": true,
     },
-    "globals": ["exports"]
+    "globals": ["exports"],
   },
   "overrides": [
     {
-      "include": ["*.md"],
-      "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 80 }
+      "includes": ["**/*.md"],
+      "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 80 },
     },
     {
-      "include": ["**/*.ts", "**/*.tsx", "**/*.mts", "**/*.cts"],
+      "includes": ["**/*.ts", "**/*.tsx", "**/*.mts", "**/*.cts"],
       "linter": {
         "rules": {
-          "complexity": { "noWith": "off" },
+          "complexity": { "noArguments": "error" },
           "correctness": {
             "noConstAssign": "off",
             "noGlobalObjectCalls": "off",
             "noInvalidBuiltinInstantiation": "off",
             "noInvalidConstructorSuper": "off",
-            "noNewSymbol": "off",
             "noSetterReturn": "off",
             "noUndeclaredVariables": "off",
+            "noUnresolvedImports": "off",
             "noUnreachable": "off",
-            "noUnreachableSuper": "off"
+            "noUnreachableSuper": "off",
           },
-          "style": { "noArguments": "error", "noVar": "error", "useConst": "error" },
+          "style": { "useConst": "error" },
           "suspicious": {
             "noClassAssign": "off",
             "noDuplicateClassMembers": "off",
@@ -150,11 +161,13 @@
             "noImportAssign": "off",
             "noRedeclare": "off",
             "noUnsafeNegation": "off",
-            "useGetterReturn": "off"
-          }
-        }
-      }
+            "useGetterReturn": "off",
+            "noWith": "off",
+            "noVar": "error",
+          },
+        },
+      },
     },
-    { "include": ["**/*.ts"], "javascript": { "globals": [] } }
-  ]
+    { "includes": ["**/*.ts"], "javascript": { "globals": [] } },
+  ],
 }
