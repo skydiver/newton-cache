@@ -225,6 +225,21 @@ export interface CacheAdapter<V = unknown> {
    * ```
    */
   forgetMany(keys: string[]): Promise<number>;
+
+  /**
+   * Start a background timer that calls prune() every `intervalSeconds`.
+   * Idempotent: calling again replaces the existing timer. The timer is
+   * unref'd so it never keeps the Node.js process alive on its own.
+   *
+   * @param intervalSeconds - How often to run prune(), in seconds. Must be a positive finite number.
+   * @throws {RangeError} If intervalSeconds is not a positive finite number.
+   */
+  startAutoPrune(intervalSeconds: number): void;
+
+  /**
+   * Stop the background prune timer if running. Safe to call when not running.
+   */
+  stopAutoPrune(): void;
 }
 
 /**
@@ -247,6 +262,12 @@ export abstract class BaseCacheAdapter<V = unknown> implements CacheAdapter<V> {
    * adapters. It does NOT provide cross-process locking.
    */
   private readonly inFlight = new Map<string, Promise<V>>();
+
+  /**
+   * Handle to the background prune timer, or undefined when no timer is active.
+   * Stored so stopAutoPrune() can cancel it and startAutoPrune() can replace it.
+   */
+  private pruneTimer: ReturnType<typeof setInterval> | undefined;
 
   // Abstract primitive methods - each adapter must implement these
   abstract get(key: string, defaultValue?: V | (() => V | Promise<V>)): Promise<V | undefined>;
@@ -425,5 +446,42 @@ export abstract class BaseCacheAdapter<V = unknown> implements CacheAdapter<V> {
       }
     }
     return defaultValue;
+  }
+
+  /**
+   * Start a background timer that calls prune() every `intervalSeconds`.
+   * Idempotent: calling again replaces the existing timer. The timer is
+   * unref'd so it never keeps the Node.js process alive on its own.
+   *
+   * @param intervalSeconds - How often to run prune(), in seconds. Must be a positive finite number.
+   * @throws {RangeError} If intervalSeconds is not a positive finite number.
+   */
+  startAutoPrune(intervalSeconds: number): void {
+    if (
+      typeof intervalSeconds !== 'number' ||
+      !Number.isFinite(intervalSeconds) ||
+      intervalSeconds <= 0
+    ) {
+      throw new RangeError(
+        `intervalSeconds must be a positive finite number (got ${intervalSeconds})`
+      );
+    }
+    this.stopAutoPrune();
+    this.pruneTimer = setInterval(() => {
+      // prune() is async; the rejection is intentionally swallowed so an unhandled
+      // rejection never crashes the host process from a background fire-and-forget timer.
+      void Promise.resolve(this.prune()).catch(() => {});
+    }, intervalSeconds * 1000);
+    this.pruneTimer.unref();
+  }
+
+  /**
+   * Stop the background prune timer if running. Safe to call when not running.
+   */
+  stopAutoPrune(): void {
+    if (this.pruneTimer !== undefined) {
+      clearInterval(this.pruneTimer);
+      this.pruneTimer = undefined;
+    }
   }
 }

@@ -1427,4 +1427,20 @@ describe('FileCache', () => {
     assert.equal(recovered, 'file-recovered');
     cleanup();
   });
+
+  // ── Auto-prune smoke test (logic shared via BaseCacheAdapter) ────────────────
+
+  it('startAutoPrune throws RangeError for invalid interval on FileCache', () => {
+    const { cache, cleanup } = setupCache();
+    assert.throws(() => cache.startAutoPrune(0), RangeError);
+    assert.throws(() => cache.startAutoPrune(-1), RangeError);
+    cleanup();
+  });
+
+  it('startAutoPrune and stopAutoPrune work on FileCache without error', () => {
+    const { cache, cleanup } = setupCache();
+    assert.doesNotThrow(() => cache.startAutoPrune(300));
+    assert.doesNotThrow(() => cache.stopAutoPrune());
+    cleanup();
+  });
 });

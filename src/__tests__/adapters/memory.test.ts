@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
+import { describe, it, mock } from 'node:test';
 import { MemoryCache } from '../../index.js';
 
 describe('MemoryCache', () => {
@@ -914,5 +914,177 @@ describe('MemoryCache', () => {
     assert.equal(factoryCalls, 1);
     assert.ok(results.every((r) => r === 'forever-val'));
     assert.equal(await cache.ttl('forever-key'), null);
+  });
+
+  // ── Auto-prune scheduler ──────────────────────────────────────────────────
+
+  describe('auto-prune scheduler', () => {
+    it('startAutoPrune throws RangeError for 0', () => {
+      const cache = new MemoryCache();
+      assert.throws(() => cache.startAutoPrune(0), RangeError);
+    });
+
+    it('startAutoPrune throws RangeError for negative number', () => {
+      const cache = new MemoryCache();
+      assert.throws(() => cache.startAutoPrune(-5), RangeError);
+    });
+
+    it('startAutoPrune throws RangeError for NaN', () => {
+      const cache = new MemoryCache();
+      assert.throws(() => cache.startAutoPrune(Number.NaN), RangeError);
+    });
+
+    it('startAutoPrune throws RangeError for Infinity', () => {
+      const cache = new MemoryCache();
+      assert.throws(() => cache.startAutoPrune(Infinity), RangeError);
+    });
+
+    it('startAutoPrune throws RangeError for non-number (string)', () => {
+      const cache = new MemoryCache();
+      assert.throws(() => cache.startAutoPrune('10' as unknown as number), RangeError);
+    });
+
+    it('startAutoPrune does not throw for valid positive number', () => {
+      const cache = new MemoryCache();
+      assert.doesNotThrow(() => cache.startAutoPrune(60));
+      cache.stopAutoPrune();
+    });
+
+    it('fires prune after one interval tick (expired entry is removed)', async () => {
+      mock.timers.enable({ apis: ['setInterval', 'Date'] });
+      const cache = new MemoryCache<string>();
+      try {
+        await cache.put('expiring', 'value', 1); // TTL 1 second
+        cache.startAutoPrune(1);
+        // Advance 1 second: interval fires AND Date.now() advances by 1000 ms.
+        // prune() has no internal awaits so its body runs synchronously in the callback.
+        mock.timers.tick(1000);
+        assert.equal(await cache.has('expiring'), false);
+      } finally {
+        cache.stopAutoPrune();
+        mock.timers.reset();
+      }
+    });
+
+    it('fires prune on every tick (called multiple times)', async () => {
+      mock.timers.enable({ apis: ['setInterval', 'Date'] });
+      const cache = new MemoryCache<string>();
+      let pruneCount = 0;
+      const realPrune = cache.prune.bind(cache);
+      (cache as unknown as { prune(): Promise<number> }).prune = async () => {
+        pruneCount++;
+        return realPrune();
+      };
+      try {
+        cache.startAutoPrune(1);
+        mock.timers.tick(1000);
+        mock.timers.tick(1000);
+        mock.timers.tick(1000);
+        assert.ok(pruneCount >= 3, `expected ≥ 3 prune calls, got ${pruneCount}`);
+      } finally {
+        cache.stopAutoPrune();
+        mock.timers.reset();
+      }
+    });
+
+    it('is idempotent: calling startAutoPrune twice leaves exactly one active timer', async () => {
+      mock.timers.enable({ apis: ['setInterval', 'Date'] });
+      const cache = new MemoryCache<string>();
+      let pruneCount = 0;
+      const realPrune = cache.prune.bind(cache);
+      (cache as unknown as { prune(): Promise<number> }).prune = async () => {
+        pruneCount++;
+        return realPrune();
+      };
+      try {
+        cache.startAutoPrune(1);
+        cache.startAutoPrune(1); // replaces the first timer
+        mock.timers.tick(1000);
+        assert.equal(pruneCount, 1); // exactly one call per tick, not two
+      } finally {
+        cache.stopAutoPrune();
+        mock.timers.reset();
+      }
+    });
+
+    it('stopAutoPrune: ticking after stop does not call prune again', async () => {
+      mock.timers.enable({ apis: ['setInterval', 'Date'] });
+      const cache = new MemoryCache<string>();
+      let pruneCount = 0;
+      const realPrune = cache.prune.bind(cache);
+      (cache as unknown as { prune(): Promise<number> }).prune = async () => {
+        pruneCount++;
+        return realPrune();
+      };
+      try {
+        cache.startAutoPrune(1);
+        mock.timers.tick(1000); // fires once
+        assert.equal(pruneCount, 1);
+        cache.stopAutoPrune();
+        mock.timers.tick(1000); // should NOT fire
+        mock.timers.tick(1000);
+        assert.equal(pruneCount, 1); // unchanged
+      } finally {
+        mock.timers.reset();
+      }
+    });
+
+    it('stopAutoPrune is a no-op when never started', () => {
+      const cache = new MemoryCache();
+      assert.doesNotThrow(() => cache.stopAutoPrune());
+    });
+
+    it('unref is called on the timer to prevent blocking process exit', () => {
+      // Intercept globalThis.setInterval to spy on the returned timer's unref method.
+      // We cast via unknown to avoid type-widening issues with the overloaded setInterval signature.
+      const realSetInterval = globalThis.setInterval;
+      let unrefCalled = false;
+      (globalThis as unknown as { setInterval(cb: () => void, ms: number): NodeJS.Timeout }).setInterval =
+        (cb: () => void, ms: number): NodeJS.Timeout => {
+          const timer = realSetInterval(cb, ms);
+          const origUnref = timer.unref.bind(timer);
+          timer.unref = () => {
+            unrefCalled = true;
+            return origUnref();
+          };
+          return timer;
+        };
+      const cache = new MemoryCache();
+      try {
+        cache.startAutoPrune(3600);
+        assert.equal(unrefCalled, true, 'expected unref() to be called on the interval timer');
+      } finally {
+        cache.stopAutoPrune();
+        (globalThis as unknown as { setInterval: typeof setInterval }).setInterval = realSetInterval;
+      }
+    });
+
+    it('prune rejection is swallowed and timer keeps running on subsequent ticks', async () => {
+      // Verify that the .catch(() => {}) in the interval callback swallows promise rejections
+      // so a failing prune() never crashes the host process or stops the scheduler.
+      mock.timers.enable({ apis: ['setInterval', 'Date'] });
+      const cache = new MemoryCache<string>();
+      let callCount = 0;
+      const realPrune = cache.prune.bind(cache);
+      (cache as unknown as { prune(): Promise<number> }).prune = () => {
+        callCount++;
+        if (callCount === 1) return Promise.reject(new Error('prune exploded'));
+        return realPrune();
+      };
+      try {
+        cache.startAutoPrune(1);
+        // First tick: prune rejects — swallowed by .catch(() => {})
+        mock.timers.tick(1000);
+        await Promise.resolve(); // drain microtask queue for the catch handler
+        assert.equal(callCount, 1);
+        // Second tick: timer is still running despite the previous rejection
+        mock.timers.tick(1000);
+        await Promise.resolve();
+        assert.equal(callCount, 2);
+      } finally {
+        cache.stopAutoPrune();
+        mock.timers.reset();
+      }
+    });
   });
 });
