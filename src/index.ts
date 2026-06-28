@@ -12,6 +12,7 @@ export type { CacheAdapter } from './adapters/base.js';
 export { FileCache, FileCache as default } from './adapters/file.js';
 export { FlatFileCache } from './adapters/flat-file.js';
 export { MemoryCache } from './adapters/memory.js';
+export { NamespacedCache } from './adapters/namespaced.js';
 // Export type definitions
 export type {
   CachePayload,

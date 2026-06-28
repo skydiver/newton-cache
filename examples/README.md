@@ -23,6 +23,7 @@ node examples/remember-pattern.js
 node examples/lru-eviction.js
 node examples/stampede-protection.js
 node examples/auto-prune.js
+node examples/namespacing.js
 ```
 
 ## Available Examples
@@ -115,6 +116,14 @@ Background expired-entry cleanup:
 - `startAutoPrune(seconds)` runs `prune()` on a timer
 - `unref`'d timer (won't block process exit), idempotent restart
 - `stopAutoPrune()` cancels it on shutdown
+
+### 11. [namespacing.js](namespacing.js)
+
+Scoped cache views via `namespace(prefix)`:
+
+- Transparent key prefixing over a shared backing store
+- Isolation between namespaces (no key collisions)
+- Scoped `flush()` for group invalidation; nesting (`a:b:key`)
 
 ## Notes
 

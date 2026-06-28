@@ -289,6 +289,39 @@ Batch operations are ideal for:
 - Batch invalidation
 - Reducing I/O overhead when working with multiple keys
 
+### Namespacing
+
+`namespace(prefix)` returns a scoped view of the cache. All keys are transparently prefixed with `prefix:`, so multiple logical caches can share one backing store and be invalidated as a group.
+
+```ts
+const cache = new MemoryCache();
+const users = cache.namespace("user");
+const sessions = cache.namespace("session");
+
+await users.put("42", { name: "Alice" });
+await sessions.put("42", { token: "abc" }); // no collision — stored as session:42
+
+await users.get("42"); // { name: 'Alice' }  (reads user:42)
+await cache.get("user:42"); // same value via the full key on the root cache
+
+// Scoped listing (keys come back without the prefix)
+await users.keys(); // ['42']
+await users.count(); // 1
+
+// Group invalidation — flush() only clears this namespace
+await users.flush();
+await users.count(); // 0
+await sessions.get("42"); // { token: 'abc' } — sibling namespace survives
+```
+
+The returned view implements the full `CacheAdapter` interface, so it's a drop-in anywhere a cache is expected. Namespaces nest (`cache.namespace('a').namespace('b')` → keys under `a:b:`).
+
+**Scope notes:**
+
+- `flush()` is **scoped** — it removes only the namespace's own keys (root keys and sibling namespaces are untouched).
+- `prune()` and `startAutoPrune()`/`stopAutoPrune()` delegate to the backing store as **global** maintenance — they only remove already-expired entries, so the cross-namespace effect is harmless.
+- `size()` returns the approximate byte size of the namespace's own values.
+
 ## Real-world Examples
 
 ### Rate Limiting
@@ -483,6 +516,7 @@ await cache.increment("counter");
 - `prune()` removes only expired entries; `flush()` removes everything; `startAutoPrune(seconds)`/`stopAutoPrune()` run `prune()` on an unref'd background timer
 - Counters (`increment`/`decrement`) are atomic within a single process and preserve existing TTL
 - `remember`/`rememberForever` deduplicate concurrent misses so the factory runs once per key (per process)
+- `namespace(prefix)` returns a prefixed, drop-in view; its `flush()` is scoped to the namespace while `prune()`/auto-prune stay global
 
 ## Scripts
 
