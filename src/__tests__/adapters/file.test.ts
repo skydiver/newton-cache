@@ -62,6 +62,19 @@ describe('FileCache', () => {
     cleanup();
   });
 
+  it('has returns false for expired entry and removes the file', async () => {
+    const { cache, cleanup, dir } = setupCache();
+    const key = 'expired-has';
+    await cache.put(key, 'old', 0.01); // 10ms TTL
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    assert.equal(await cache.has(key), false);
+    // File should have been cleaned up by has()
+    const filename = path.join(dir, encodeURIComponent(key));
+    assert.equal(fs.existsSync(filename), false);
+    cleanup();
+  });
+
   it('get returns default on invalid JSON', async () => {
     const { cache, cleanup, dir } = setupCache();
     const key = 'invalid-json';

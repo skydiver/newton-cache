@@ -152,21 +152,6 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
   }
 
   /**
-   * Stores a value permanently (alias for put without TTL).
-   *
-   * @param key - The cache key
-   * @param value - The value to store
-   *
-   * @example
-   * ```ts
-   * await cache.forever('config', { setting: 'value' });
-   * ```
-   */
-  async forever(key: string, value: V): Promise<void> {
-    await this.put(key, value);
-  }
-
-  /**
    * Removes an item from the cache.
    *
    * @param key - The cache key
@@ -279,48 +264,6 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
       fs.closeSync(fd);
     }
     return true;
-  }
-
-  /**
-   * Retrieves a value or stores the result of a factory function if missing/expired.
-   *
-   * @param key - The cache key
-   * @param seconds - TTL in seconds (use Infinity for no expiration)
-   * @param factory - Function to generate the value if not cached
-   * @returns The cached or newly generated value
-   *
-   * @example
-   * ```ts
-   * const users = await cache.remember('users', 60, () => fetchUsers());
-   * // First call: executes fetchUsers() and caches result
-   * // Subsequent calls: returns cached value
-   * ```
-   */
-  async remember(key: string, seconds: number, factory: () => V | Promise<V>): Promise<V> {
-    if (await this.has(key)) {
-      const existing = await this.get(key);
-      if (existing !== undefined) return existing;
-    }
-
-    const value = await factory();
-    await this.put(key, value, seconds);
-    return value;
-  }
-
-  /**
-   * Retrieves a value or stores the result of a factory function permanently.
-   *
-   * @param key - The cache key
-   * @param factory - Function to generate the value if not cached
-   * @returns The cached or newly generated value
-   *
-   * @example
-   * ```ts
-   * const config = await cache.rememberForever('config', () => loadConfig());
-   * ```
-   */
-  async rememberForever(key: string, factory: () => V | Promise<V>): Promise<V> {
-    return await this.remember(key, Number.POSITIVE_INFINITY, factory);
   }
 
   /*****************************************************************************
@@ -439,21 +382,6 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
     } catch {
       return [];
     }
-  }
-
-  /**
-   * Returns the number of non-expired cache entries.
-   *
-   * @returns The count of valid cache entries
-   *
-   * @example
-   * ```ts
-   * const itemCount = await cache.count();
-   * console.log(`Cache contains ${itemCount} items`);
-   * ```
-   */
-  async count(): Promise<number> {
-    return (await this.keys()).length;
   }
 
   /**
@@ -695,24 +623,4 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
     return newValue;
   }
 
-  /**
-   * Decrements a numeric cache value atomically.
-   *
-   * If the key doesn't exist, it will be created with the negative of the decrement amount.
-   * Non-numeric values will be treated as 0.
-   *
-   * @param key - The cache key
-   * @param amount - The amount to decrement by (default: 1)
-   * @returns The new value after decrementing
-   *
-   * @example
-   * ```ts
-   * await cache.put('credits', 100);
-   * await cache.decrement('credits');        // 99
-   * await cache.decrement('credits', 10);    // 89
-   * ```
-   */
-  async decrement(key: string, amount = 1): Promise<number> {
-    return await this.increment(key, -amount);
-  }
 }

@@ -244,19 +244,78 @@ export abstract class BaseCacheAdapter<V = unknown> implements CacheAdapter<V> {
   abstract forget(key: string): Promise<boolean>;
   abstract has(key: string): Promise<boolean>;
   abstract flush(): Promise<void>;
-  abstract forever(key: string, value: V): Promise<void>;
   abstract add(key: string, value: V, seconds?: number): Promise<boolean>;
   abstract pull(key: string, defaultValue?: V | (() => V | Promise<V>)): Promise<V | undefined>;
-  abstract remember(key: string, seconds: number, factory: () => V | Promise<V>): Promise<V>;
-  abstract rememberForever(key: string, factory: () => V | Promise<V>): Promise<V>;
   abstract keys(): Promise<string[]>;
-  abstract count(): Promise<number>;
   abstract size(): Promise<number>;
   abstract prune(): Promise<number>;
   abstract ttl(key: string): Promise<number | null>;
   abstract touch(key: string, seconds: number): Promise<boolean>;
   abstract increment(key: string, amount?: number): Promise<number>;
-  abstract decrement(key: string, amount?: number): Promise<number>;
+
+  /**
+   * Retrieves a value or stores the result of a factory function if missing/expired.
+   *
+   * Uses a single get() call to check existence and retrieve the value, avoiding the
+   * TOCTOU window of the older has()+get() double-lookup pattern. An undefined result
+   * from get() is treated as a cache miss (key absent or expired).
+   *
+   * @param key - The cache key
+   * @param seconds - TTL in seconds (use Infinity for no expiration)
+   * @param factory - Sync or async function to generate the value if not cached
+   * @returns The cached or newly generated value
+   */
+  async remember(key: string, seconds: number, factory: () => V | Promise<V>): Promise<V> {
+    const existing = await this.get(key);
+    if (existing !== undefined) return existing;
+    const value = await factory();
+    await this.put(key, value, seconds);
+    return value;
+  }
+
+  /**
+   * Stores a value permanently (alias for put without TTL).
+   *
+   * @param key - The cache key
+   * @param value - The value to store
+   */
+  async forever(key: string, value: V): Promise<void> {
+    await this.put(key, value);
+  }
+
+  /**
+   * Decrements a numeric cache value atomically.
+   * Delegates to increment() with a negative amount.
+   *
+   * @param key - The cache key
+   * @param amount - The amount to decrement by (default: 1)
+   * @returns The new value after decrementing
+   */
+  async decrement(key: string, amount = 1): Promise<number> {
+    return await this.increment(key, -amount);
+  }
+
+  /**
+   * Retrieves a value or stores the result of a factory function permanently.
+   * Delegates to remember() with Infinity TTL.
+   *
+   * @param key - The cache key
+   * @param factory - Sync or async function to generate the value if not cached
+   * @returns The cached or newly generated value
+   */
+  async rememberForever(key: string, factory: () => V | Promise<V>): Promise<V> {
+    return await this.remember(key, Number.POSITIVE_INFINITY, factory);
+  }
+
+  /**
+   * Returns the number of non-expired cache entries.
+   * Delegates to keys().length.
+   *
+   * @returns The count of valid cache entries
+   */
+  async count(): Promise<number> {
+    return (await this.keys()).length;
+  }
 
   /**
    * Retrieves multiple cached values by their keys.

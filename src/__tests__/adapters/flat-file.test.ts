@@ -827,4 +827,60 @@ describe('FlatFileCache', () => {
     assert.equal(tmpFiles.length, 0);
     cleanup();
   });
+
+  // putMany override tests
+  it('putMany performs a single disk write for N keys', async () => {
+    const { cache, filePath, cleanup } = setupCache();
+    let renameCount = 0;
+    const origRename = fs.renameSync;
+    fs.renameSync = (oldPath: fs.PathLike, newPath: fs.PathLike) => {
+      if (String(newPath) === filePath) renameCount++;
+      origRename(oldPath, newPath);
+    };
+    try {
+      await cache.putMany({ a: '1', b: '2', c: '3' }, 60);
+      assert.equal(renameCount, 1, `expected 1 disk write, got ${renameCount}`);
+    } finally {
+      fs.renameSync = origRename;
+    }
+    cleanup();
+  });
+
+  it('putMany persists all keys with correct values', async () => {
+    const { cache, filePath, cleanup } = setupCache();
+    await cache.putMany({ x: 'alpha', y: 'beta', z: 'gamma' });
+    const payload = readPayload(filePath);
+    assert.equal(payload.x?.value, 'alpha');
+    assert.equal(payload.y?.value, 'beta');
+    assert.equal(payload.z?.value, 'gamma');
+    cleanup();
+  });
+
+  it('putMany with TTL sets expiresAt for all keys', async () => {
+    const { cache, filePath, cleanup } = setupCache();
+    const before = Date.now();
+    await cache.putMany({ p: 1, q: 2 } as Record<string, unknown> as Record<string, string>, 10);
+    const payload = readPayload(filePath);
+    assert.ok(payload.p?.expiresAt != null && (payload.p.expiresAt as number) > before);
+    assert.ok(payload.q?.expiresAt != null && (payload.q.expiresAt as number) > before);
+    cleanup();
+  });
+
+  it('putMany with Infinity TTL stores without expiresAt', async () => {
+    const { cache, filePath, cleanup } = setupCache();
+    await cache.putMany({ forever: 'yes' } as Record<string, unknown> as Record<string, string>, Number.POSITIVE_INFINITY);
+    const payload = readPayload(filePath);
+    assert.equal(Object.hasOwn(payload.forever ?? {}, 'expiresAt'), false);
+    cleanup();
+  });
+
+  it('putMany rejects invalid TTL before writing any key', async () => {
+    const { cache, filePath, cleanup } = setupCache();
+    await assert.rejects(
+      () => cache.putMany({ a: '1', b: '2' }, -1),
+      RangeError
+    );
+    assert.equal(fs.existsSync(filePath), false);
+    cleanup();
+  });
 });

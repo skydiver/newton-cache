@@ -138,21 +138,6 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
   }
 
   /**
-   * Stores a value permanently (alias for put without TTL).
-   *
-   * @param key - The cache key
-   * @param value - The value to store
-   *
-   * @example
-   * ```ts
-   * await cache.forever('app-version', '1.0.0');
-   * ```
-   */
-  async forever(key: string, value: V): Promise<void> {
-    await this.put(key, value);
-  }
-
-  /**
    * Removes an item from the cache.
    *
    * @param key - The cache key
@@ -228,47 +213,6 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
   }
 
   /**
-   * Retrieves a value or stores the result of a factory function if missing/expired.
-   *
-   * @param key - The cache key
-   * @param seconds - TTL in seconds (use Infinity for no expiration)
-   * @param factory - Function to generate the value if not cached
-   * @returns The cached or newly generated value
-   *
-   * @example
-   * ```ts
-   * const users = await cache.remember('users', 60, () => fetchUsers());
-   * ```
-   */
-  async remember(key: string, seconds: number, factory: () => V | Promise<V>): Promise<V> {
-    assertStringKey(key);
-    if (await this.has(key)) {
-      const existing = await this.get(key);
-      if (existing !== undefined) return existing;
-    }
-
-    const value = await factory();
-    await this.put(key, value, seconds);
-    return value;
-  }
-
-  /**
-   * Retrieves a value or stores the result of a factory function permanently.
-   *
-   * @param key - The cache key
-   * @param factory - Function to generate the value if not cached
-   * @returns The cached or newly generated value
-   *
-   * @example
-   * ```ts
-   * const config = await cache.rememberForever('config', () => loadConfig());
-   * ```
-   */
-  async rememberForever(key: string, factory: () => V | Promise<V>): Promise<V> {
-    return await this.remember(key, Number.POSITIVE_INFINITY, factory);
-  }
-
-  /**
    * Checks if a key exists in the cache and has not expired.
    *
    * @param key - The cache key
@@ -321,20 +265,6 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
 
     if (changed) this.saveToDisk();
     return keys;
-  }
-
-  /**
-   * Returns the number of non-expired cache entries.
-   *
-   * @returns The count of valid cache entries
-   *
-   * @example
-   * ```ts
-   * console.log(`Cache has ${await cache.count()} entries`);
-   * ```
-   */
-  async count(): Promise<number> {
-    return (await this.keys()).length;
   }
 
   /**
@@ -483,23 +413,24 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
   }
 
   /**
-   * Decrements a numeric cache value atomically.
+   * Stores multiple key-value pairs in the cache with an optional TTL.
+   * Overrides the base implementation to perform a single disk write for all keys,
+   * instead of one write per key.
    *
-   * Non-numeric values are treated as 0. Preserves existing TTL.
-   *
-   * @param key - The cache key
-   * @param amount - The amount to decrement by (default: 1)
-   * @returns The new value after decrementing
-   *
-   * @example
-   * ```ts
-   * await cache.decrement('credits'); // Returns -1
-   * await cache.put('balance', 100);
-   * await cache.decrement('balance', 20); // Returns 80
-   * ```
+   * @param items - Object containing key-value pairs to store
+   * @param seconds - Optional TTL in seconds (omit or pass Infinity for no expiration)
+   * @throws {RangeError} If seconds is NaN or negative
    */
-  async decrement(key: string, amount = 1): Promise<number> {
-    return await this.increment(key, -amount);
+  override async putMany(items: Record<string, V>, seconds?: number): Promise<void> {
+    validateTTL(seconds);
+    const expiresAt =
+      seconds == null || !Number.isFinite(seconds) ? undefined : Date.now() + seconds * 1000;
+    this.loadFromDisk();
+    for (const [key, value] of Object.entries(items)) {
+      assertStringKey(key);
+      this.store.set(key, { value, expiresAt, key });
+    }
+    this.saveToDisk();
   }
 
   /**

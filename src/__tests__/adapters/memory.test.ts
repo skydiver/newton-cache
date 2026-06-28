@@ -86,6 +86,16 @@ describe('MemoryCache', () => {
     assert.equal(await cache.ttl('forever'), null);
   });
 
+  it('remember calls factory exactly once on miss, zero times on hit', async () => {
+    const cache = new MemoryCache();
+    let calls = 0;
+    const factory = () => { calls++; return 'computed'; };
+    await cache.remember('miss-key', 60, factory);
+    assert.equal(calls, 1);
+    await cache.remember('miss-key', 60, factory);
+    assert.equal(calls, 1); // Cached — factory not called again
+  });
+
   it('put stores with TTL', async () => {
     const cache = new MemoryCache();
     await cache.put('ttl', 'value', 10);
