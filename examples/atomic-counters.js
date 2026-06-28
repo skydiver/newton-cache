@@ -80,7 +80,9 @@ import { FileCache } from '../dist/index.js';
   console.log('   User makes 7 API requests (limit: 5):');
   for (let i = 1; i <= 7; i++) {
     const result = await checkRateLimit('user-123', 5);
-    console.log(`   Request ${i}: ${result.allowed ? '✓ ALLOWED' : '✗ BLOCKED'} (${result.remaining} remaining)`);
+    console.log(
+      `   Request ${i}: ${result.allowed ? '✓ ALLOWED' : '✗ BLOCKED'} (${result.remaining} remaining)`
+    );
   }
   console.log();
 
@@ -107,7 +109,7 @@ import { FileCache } from '../dist/index.js';
   console.log('   Created counter with 30s TTL');
   console.log('   Initial TTL:', await cache.ttl('session-requests'), 'seconds');
 
-  await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+  await new Promise((resolve) => setTimeout(resolve, 2000)); // Wait 2 seconds
 
   await cache.increment('session-requests');
   await cache.increment('session-requests');
@@ -140,7 +142,7 @@ import { FileCache } from '../dist/index.js';
   for (const p of players) {
     scores.push({
       name: p.name,
-      score: await cache.get(`leaderboard:${p.name}`, 0)
+      score: await cache.get(`leaderboard:${p.name}`, 0),
     });
   }
   scores.sort((a, b) => b.score - a.score);

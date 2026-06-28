@@ -18,7 +18,7 @@ import { FileCache } from '../dist/index.js';
 
   // 1. Store with different TTL values
   console.log('1. Storing values with different TTLs:');
-  await cache.put('short-lived', 'expires soon', 5);  // 5 seconds
+  await cache.put('short-lived', 'expires soon', 5); // 5 seconds
   await cache.put('medium-lived', 'expires later', 15); // 15 seconds
   await cache.put('long-lived', 'expires much later', 30); // 30 seconds
   await cache.forever('permanent', 'never expires'); // No TTL
@@ -35,7 +35,7 @@ import { FileCache } from '../dist/index.js';
 
   // 3. Wait and check again
   console.log('3. Waiting 6 seconds...');
-  await new Promise(resolve => setTimeout(resolve, 6000));
+  await new Promise((resolve) => setTimeout(resolve, 6000));
   console.log('   After 6 seconds:');
   console.log('   short-lived:', await cache.get('short-lived', 'EXPIRED'));
   console.log('   medium-lived TTL:', await cache.ttl('medium-lived'), 'seconds');
@@ -79,7 +79,7 @@ import { FileCache } from '../dist/index.js';
   const session = await createSession('user-456', { userId: 456, role: 'admin' });
   console.log('   Session TTL:', await cache.ttl(session), 'seconds');
 
-  await new Promise(resolve => setTimeout(resolve, 3000));
+  await new Promise((resolve) => setTimeout(resolve, 3000));
   console.log('   After 3 seconds, TTL:', await cache.ttl(session), 'seconds');
 
   await extendSession(session);
@@ -99,7 +99,7 @@ import { FileCache } from '../dist/index.js';
   console.log('   Created 5 entries (3 with 2s TTL, 2 permanent)');
   console.log('   Total entries:', await cache.count());
 
-  await new Promise(resolve => setTimeout(resolve, 2500));
+  await new Promise((resolve) => setTimeout(resolve, 2500));
 
   console.log('   After 2.5 seconds:');
   console.log('   Before prune, count:', await cache.count());
@@ -116,7 +116,7 @@ import { FileCache } from '../dist/index.js';
   console.log('   Created entry with 10s TTL');
 
   for (let i = 0; i < 5; i++) {
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    await new Promise((resolve) => setTimeout(resolve, 2000));
     const remaining = await cache.ttl('monitored');
     if (remaining === null) {
       console.log(`   After ${(i + 1) * 2}s: EXPIRED`);

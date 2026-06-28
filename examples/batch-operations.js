@@ -60,7 +60,7 @@ import { FileCache } from '../dist/index.js';
       id: i,
       name: `Product ${i}`,
       price: (Math.random() * 100).toFixed(2),
-      inStock: Math.random() > 0.3
+      inStock: Math.random() > 0.3,
     };
   }
 
@@ -75,7 +75,7 @@ import { FileCache } from '../dist/index.js';
   // 5. Selective retrieval
   console.log('5. Retrieving specific products:');
   const productIds = [5, 15, 25, 35, 45];
-  const productKeys = productIds.map(id => `product:${id}`);
+  const productKeys = productIds.map((id) => `product:${id}`);
   const selectedProducts = await cache.getMany(productKeys);
   console.log(`   Retrieved ${productIds.length} products:`);
   for (const [key, product] of Object.entries(selectedProducts)) {
@@ -98,7 +98,7 @@ import { FileCache } from '../dist/index.js';
   console.log('7. Bulk invalidation pattern:');
   console.log('   Finding all user keys to invalidate...');
   const allKeys = await cache.keys();
-  const userOnlyKeys = allKeys.filter(key => key.startsWith('user:'));
+  const userOnlyKeys = allKeys.filter((key) => key.startsWith('user:'));
   console.log(`   Found ${userOnlyKeys.length} user keys`);
 
   const removedUsers = await cache.forgetMany(userOnlyKeys);

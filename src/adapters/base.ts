@@ -288,13 +288,13 @@ export abstract class BaseCacheAdapter<V = unknown> implements CacheAdapter<V> {
    * @returns The resolved default value or undefined
    */
   protected async resolveDefault(
-    defaultValue?: V | (() => V | Promise<V>),
+    defaultValue?: V | (() => V | Promise<V>)
   ): Promise<V | undefined> {
-    if (typeof defaultValue === "function") {
+    if (typeof defaultValue === 'function') {
       try {
         return await (defaultValue as () => V | Promise<V>)();
       } catch {
-        return undefined;
+        return;
       }
     }
     return defaultValue;

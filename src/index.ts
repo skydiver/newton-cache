@@ -6,21 +6,17 @@
  */
 
 // Export adapter interface
-export type { CacheAdapter } from "./adapters/base.js";
-
+export type { CacheAdapter } from './adapters/base.js';
+// Export adapter implementations
+// Default export for convenience
+export { FileCache, FileCache as default } from './adapters/file.js';
+export { FlatFileCache } from './adapters/flat-file.js';
+export { MemoryCache } from './adapters/memory.js';
 // Export type definitions
 export type {
   CacheOptions,
+  CachePayload,
   FileCacheOptions,
   FlatFileCacheOptions,
   MemoryCacheOptions,
-  CachePayload,
-} from "./types.js";
-
-// Export adapter implementations
-export { FileCache } from "./adapters/file.js";
-export { FlatFileCache } from "./adapters/flat-file.js";
-export { MemoryCache } from "./adapters/memory.js";
-
-// Default export for convenience
-export { FileCache as default } from "./adapters/file.js";
+} from './types.js';

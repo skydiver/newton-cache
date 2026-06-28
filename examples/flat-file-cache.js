@@ -8,10 +8,10 @@
  * - Easy to inspect (just read the JSON file)
  */
 
-import { FlatFileCache } from '../dist/index.js';
 import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { FlatFileCache } from '../dist/index.js';
 
 (async () => {
   console.log('=== FlatFileCache Example ===\n');
@@ -55,11 +55,15 @@ import path from 'node:path';
 
   // 4. Store with TTL
   console.log('4. Storing temporary session data:');
-  await cache.put('session:user123', {
-    userId: 123,
-    loginTime: new Date().toISOString(),
-    permissions: ['read', 'write']
-  }, 10); // 10 seconds TTL
+  await cache.put(
+    'session:user123',
+    {
+      userId: 123,
+      loginTime: new Date().toISOString(),
+      permissions: ['read', 'write'],
+    },
+    10
+  ); // 10 seconds TTL
   console.log('   Stored session data (expires in 10s)');
   console.log('   Session data:', await cache.get('session:user123'));
   console.log();

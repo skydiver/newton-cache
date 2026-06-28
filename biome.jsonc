@@ -3,7 +3,7 @@
   "vcs": { "enabled": false, "clientKind": "git", "useIgnoreFile": false },
   "files": {
     "ignoreUnknown": false,
-    "includes": ["**", "!**/dist/**", "!**/coverage/**", "!**/*.tsbuildinfo"],
+    "includes": ["**", "!**/dist/**", "!**/coverage/**", "!**/*.tsbuildinfo"]
   },
   "formatter": {
     "enabled": true,
@@ -15,7 +15,7 @@
     "lineWidth": 100,
     "attributePosition": "auto",
     "bracketSpacing": true,
-    "includes": ["**", "!**/pnpm-lock.yaml", "!**/LICENSE"],
+    "includes": ["**", "!**/pnpm-lock.yaml", "!**/LICENSE"]
   },
   "assist": { "actions": { "source": { "organizeImports": "on" } } },
   "linter": {
@@ -28,7 +28,7 @@
         "noUselessCatch": "error",
         "noUselessCatchBinding": "error",
         "noUselessTypeConstraint": "error",
-        "noUselessUndefined": "error",
+        "noUselessUndefined": "error"
       },
       "correctness": {
         "noConstAssign": "error",
@@ -55,13 +55,13 @@
         "useIsNan": "error",
         "useValidForDirection": "error",
         "useYield": "error",
-        "useValidTypeof": "error",
+        "useValidTypeof": "error"
       },
       "style": {
         "noNamespace": "error",
         "useAsConstAssertion": "error",
         "useBlockStatements": "off",
-        "useArrayLiterals": "off",
+        "useArrayLiterals": "off"
       },
       "suspicious": {
         "noAsyncPromiseExecutor": "error",
@@ -95,8 +95,8 @@
         "noUnusedExpressions": "error",
         "useGetterReturn": "error",
         "useNamespaceKeyword": "error",
-        "noWith": "error",
-      },
+        "noWith": "error"
+      }
     },
     "includes": [
       "**",
@@ -113,8 +113,8 @@
       "!**/*.tsbuildinfo",
       "!**/.pnpm-debug.log*",
       "!**/.DS_Store",
-      "!**/Thumbs.db",
-    ],
+      "!**/Thumbs.db"
+    ]
   },
   "javascript": {
     "formatter": {
@@ -126,14 +126,14 @@
       "bracketSameLine": false,
       "quoteStyle": "single",
       "attributePosition": "auto",
-      "bracketSpacing": true,
+      "bracketSpacing": true
     },
-    "globals": ["exports"],
+    "globals": ["exports"]
   },
   "overrides": [
     {
       "includes": ["**/*.md"],
-      "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 80 },
+      "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 80 }
     },
     {
       "includes": ["**/*.ts", "**/*.tsx", "**/*.mts", "**/*.cts"],
@@ -149,7 +149,7 @@
             "noUndeclaredVariables": "off",
             "noUnresolvedImports": "off",
             "noUnreachable": "off",
-            "noUnreachableSuper": "off",
+            "noUnreachableSuper": "off"
           },
           "style": { "useConst": "error" },
           "suspicious": {
@@ -163,11 +163,11 @@
             "noUnsafeNegation": "off",
             "useGetterReturn": "off",
             "noWith": "off",
-            "noVar": "error",
-          },
-        },
-      },
+            "noVar": "error"
+          }
+        }
+      }
     },
-    { "includes": ["**/*.ts"], "javascript": { "globals": [] } },
-  ],
+    { "includes": ["**/*.ts"], "javascript": { "globals": [] } }
+  ]
 }

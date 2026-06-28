@@ -1,5 +1,5 @@
-import { BaseCacheAdapter } from "./base.js";
-import type { MemoryCacheOptions, CachePayload } from "../types.js";
+import type { CachePayload, MemoryCacheOptions } from '../types.js';
+import { BaseCacheAdapter } from './base.js';
 
 /**
  * In-memory cache with TTL support.
@@ -440,7 +440,7 @@ export class MemoryCache<V = unknown> extends BaseCacheAdapter<V> {
     if (entry) {
       // Only use existing value if it's a number and not expired
       if (
-        typeof entry.value === "number" &&
+        typeof entry.value === 'number' &&
         (entry.expiresAt == null || entry.expiresAt > Date.now())
       ) {
         currentValue = entry.value;
@@ -473,5 +473,4 @@ export class MemoryCache<V = unknown> extends BaseCacheAdapter<V> {
   async decrement(key: string, amount = 1): Promise<number> {
     return await this.increment(key, -amount);
   }
-
 }

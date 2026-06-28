@@ -1,10 +1,10 @@
-import fs from "node:fs";
-import path from "node:path";
-import { tmpdir } from "node:os";
-import { BaseCacheAdapter } from "./base.js";
-import type { CachePayload, FlatFileCacheOptions } from "../types.js";
+import fs from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import type { CachePayload, FlatFileCacheOptions } from '../types.js';
+import { BaseCacheAdapter } from './base.js';
 
-const DEFAULT_CACHE_FILE = path.join(tmpdir(), "newton-cache.json");
+const DEFAULT_CACHE_FILE = path.join(tmpdir(), 'newton-cache.json');
 
 /**
  * Flat-file cache that stores all entries in a single JSON file.
@@ -431,7 +431,7 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
     let expiresAt: number | undefined;
 
     if (entry && !this.isExpired(entry)) {
-      if (typeof entry.value === "number") {
+      if (typeof entry.value === 'number') {
         currentValue = entry.value;
       }
       expiresAt = entry.expiresAt;
@@ -477,18 +477,18 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
 
     let dirty = false;
     try {
-      const content = fs.readFileSync(this.filePath, "utf8");
+      const content = fs.readFileSync(this.filePath, 'utf8');
       if (!content.trim()) return;
 
       const parsed = JSON.parse(content) as Record<string, CachePayload<V>> | null;
-      if (!parsed || typeof parsed !== "object") {
+      if (!parsed || typeof parsed !== 'object') {
         dirty = true;
         return;
       }
 
       const now = Date.now();
       for (const [key, entry] of Object.entries(parsed)) {
-        if (!entry || typeof entry !== "object") {
+        if (!entry || typeof entry !== 'object') {
           dirty = true;
           this.removedOnLoad++;
           continue;
@@ -544,7 +544,7 @@ export class FlatFileCache<V = unknown> extends BaseCacheAdapter<V> {
       }
 
       const serialized = JSON.stringify(payload);
-      fs.writeFileSync(tempPath, serialized, "utf8");
+      fs.writeFileSync(tempPath, serialized, 'utf8');
       fs.renameSync(tempPath, this.filePath);
     } catch {
       /* ignore */

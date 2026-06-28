@@ -55,9 +55,7 @@ import { FileCache } from '../dist/index.js';
 
   console.log('   Calling getProducts() three times:');
   async function getProducts() {
-    return await cache.remember('products:all', 60, () =>
-      queryDatabase('SELECT * FROM products')
-    );
+    return await cache.remember('products:all', 60, () => queryDatabase('SELECT * FROM products'));
   }
 
   await getProducts(); // Cache miss - DB query runs
@@ -76,7 +74,7 @@ import { FileCache } from '../dist/index.js';
     return {
       appName: 'Newton Cache Demo',
       version: '1.0.0',
-      features: ['caching', 'ttl', 'persistence']
+      features: ['caching', 'ttl', 'persistence'],
     };
   }
 
@@ -108,7 +106,7 @@ import { FileCache } from '../dist/index.js';
           id: userId,
           name: `User ${userId}`,
           bio: 'Software developer',
-          followers: Math.floor(Math.random() * 1000)
+          followers: Math.floor(Math.random() * 1000),
         };
       });
     }
@@ -160,9 +158,10 @@ import { FileCache } from '../dist/index.js';
 
   await warmCache();
   const allKeys = await cache.keys();
-  console.log('   Cached keys:', allKeys.filter(k =>
-    ['homepage-content', 'nav-menu', 'featured-products'].includes(k)
-  ));
+  console.log(
+    '   Cached keys:',
+    allKeys.filter((k) => ['homepage-content', 'nav-menu', 'featured-products'].includes(k))
+  );
   console.log();
 
   // 6. Conditional caching

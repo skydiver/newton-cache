@@ -38,7 +38,10 @@ import { FileCache } from '../dist/index.js';
 
   // 4. Get with default value
   console.log('4. Getting with default values:');
-  console.log('   cache.get("missing-key", "default-value"):', await cache.get('missing-key', 'default-value'));
+  console.log(
+    '   cache.get("missing-key", "default-value"):',
+    await cache.get('missing-key', 'default-value')
+  );
   console.log();
 
   // 5. Get with factory function (only called when key is missing)
@@ -54,7 +57,7 @@ import { FileCache } from '../dist/index.js';
 
   // 6. Wait for TTL to expire
   console.log('6. Waiting for TTL expiration (3 seconds)...');
-  await new Promise(resolve => setTimeout(resolve, 3100));
+  await new Promise((resolve) => setTimeout(resolve, 3100));
   console.log('   After 3 seconds, session-token:', await cache.get('session-token', 'EXPIRED'));
   console.log();
 

@@ -1,11 +1,11 @@
-import crypto from "node:crypto";
-import fs from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { BaseCacheAdapter } from "./base.js";
-import type { FileCacheOptions, CachePayload } from "../types.js";
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import type { CachePayload, FileCacheOptions } from '../types.js';
+import { BaseCacheAdapter } from './base.js';
 
-const DEFAULT_CACHE_DIR = path.join(tmpdir(), "node-cache");
+const DEFAULT_CACHE_DIR = path.join(tmpdir(), 'node-cache');
 const MAX_KEY_LENGTH = 200; // Safe limit for encoded filenames across filesystems
 
 /**
@@ -64,7 +64,7 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
     if (!fs.existsSync(filename)) return await this.resolveDefault(defaultValue);
 
     try {
-      const content = fs.readFileSync(filename, "utf8");
+      const content = fs.readFileSync(filename, 'utf8');
       const parsed = JSON.parse(content) as CachePayload<V> | null;
       if (!parsed) return await this.resolveDefault(defaultValue);
 
@@ -96,7 +96,7 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
     if (!fs.existsSync(filename)) return await this.resolveDefault(defaultValue);
 
     try {
-      const content = fs.readFileSync(filename, "utf8");
+      const content = fs.readFileSync(filename, 'utf8');
       const parsed = JSON.parse(content) as CachePayload<V> | null;
       if (!parsed) {
         fs.unlinkSync(filename);
@@ -141,7 +141,7 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
     // Store original key for reconstruction (needed for hashed long keys)
     const payload = JSON.stringify({ value, expiresAt, key });
     const filename = this.pathForKey(key);
-    fs.writeFileSync(filename, payload, "utf8");
+    fs.writeFileSync(filename, payload, 'utf8');
   }
 
   /**
@@ -241,7 +241,7 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
     const expiresAt = Number.isFinite(seconds) ? Date.now() + seconds * 1000 : undefined;
     const payload = JSON.stringify({ value, expiresAt, key });
     const filename = this.pathForKey(key);
-    fs.writeFileSync(filename, payload, "utf8");
+    fs.writeFileSync(filename, payload, 'utf8');
     return value;
   }
 
@@ -270,7 +270,7 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
 
     // Hash long keys to stay within filesystem limits (typically 255 bytes)
     if (key.length > MAX_KEY_LENGTH) {
-      const hash = crypto.createHash("sha256").update(key).digest("hex");
+      const hash = crypto.createHash('sha256').update(key).digest('hex');
       filename = `long_${hash}`;
     } else {
       filename = encodeURIComponent(key);
@@ -300,7 +300,7 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
     if (!fs.existsSync(filename)) return false;
 
     try {
-      const content = fs.readFileSync(filename, "utf8");
+      const content = fs.readFileSync(filename, 'utf8');
       const parsed = JSON.parse(content) as CachePayload<V> | null;
       if (!parsed) return false;
 
@@ -338,7 +338,7 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
         const filename = path.join(this.cacheDir, file);
 
         try {
-          const content = fs.readFileSync(filename, "utf8");
+          const content = fs.readFileSync(filename, 'utf8');
           const parsed = JSON.parse(content) as CachePayload<V> | null;
 
           if (!parsed || parsed.value === undefined) continue;
@@ -438,7 +438,7 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
         const filename = path.join(this.cacheDir, file);
 
         try {
-          const content = fs.readFileSync(filename, "utf8");
+          const content = fs.readFileSync(filename, 'utf8');
           const parsed = JSON.parse(content) as CachePayload<V> | null;
 
           // Remove if expired or invalid
@@ -486,7 +486,7 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
     if (!fs.existsSync(filename)) return null;
 
     try {
-      const content = fs.readFileSync(filename, "utf8");
+      const content = fs.readFileSync(filename, 'utf8');
       const parsed = JSON.parse(content) as CachePayload<V> | null;
 
       if (!parsed || parsed.value === undefined) return null;
@@ -526,7 +526,7 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
     if (!fs.existsSync(filename)) return false;
 
     try {
-      const content = fs.readFileSync(filename, "utf8");
+      const content = fs.readFileSync(filename, 'utf8');
       const parsed = JSON.parse(content) as CachePayload<V> | null;
 
       if (!parsed || parsed.value === undefined) return false;
@@ -539,15 +539,13 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
 
       // Update expiration
       const newExpiresAt =
-        seconds == null || !Number.isFinite(seconds)
-          ? undefined
-          : Date.now() + seconds * 1000;
+        seconds == null || !Number.isFinite(seconds) ? undefined : Date.now() + seconds * 1000;
       const newPayload = JSON.stringify({
         value: parsed.value,
         expiresAt: newExpiresAt,
         key: parsed.key,
       });
-      fs.writeFileSync(filename, newPayload, "utf8");
+      fs.writeFileSync(filename, newPayload, 'utf8');
       return true;
     } catch {
       return false;
@@ -580,7 +578,7 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
     // Try to read existing value
     if (fs.existsSync(filename)) {
       try {
-        const content = fs.readFileSync(filename, "utf8");
+        const content = fs.readFileSync(filename, 'utf8');
         const parsed = JSON.parse(content) as {
           value: unknown;
           expiresAt?: number;
@@ -589,7 +587,7 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
 
         if (parsed) {
           // Only use existing value if it's a number
-          if (typeof parsed.value === "number") {
+          if (typeof parsed.value === 'number') {
             currentValue = parsed.value;
           }
           expiresAt = parsed.expiresAt;
@@ -613,7 +611,7 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
       expiresAt,
       key: storedKey ?? key,
     });
-    fs.writeFileSync(filename, payload, "utf8");
+    fs.writeFileSync(filename, payload, 'utf8');
     return newValue;
   }
 
@@ -637,5 +635,4 @@ export class FileCache<V = unknown> extends BaseCacheAdapter<V> {
   async decrement(key: string, amount = 1): Promise<number> {
     return await this.increment(key, -amount);
   }
-
 }
